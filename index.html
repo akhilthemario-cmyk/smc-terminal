@@ -418,9 +418,15 @@ function genAnalysis(){
     {t:"Liquidity Void",d:`Unfilled void — magnetic zone`,p:"medium",i:"🕳️"},
   ];
   const dets=allD.sort(()=>r(1)-.5).slice(0,5+Math.floor(r(5)));
-  const entry=(1000+r(500)).toFixed(2),sl=(5+r(15)).toFixed(2);
+  // Price reference map — realistic base prices per symbol
+  const PRICE_REF={'OANDA:XAUUSD':5130,'OANDA:EURUSD':1.085,'OANDA:GBPUSD':1.265,'FX:USDJPY':149.5,'OANDA:GBPJPY':189,'BITSTAMP:BTCUSD':95000,'BITSTAMP:ETHUSD':3200,'NASDAQ:AAPL':225,'NASDAQ:TSLA':340,'SP:SPX':5700,'OANDA:NAS100USD':20500,'TVC:DXY':104,'OANDA:USOIL':72,'OANDA:XAGUSD':32};
+  const basePrice = PRICE_REF[S.sym.s] || 100;
+  const slPct = 0.003 + r(0.004); // 0.3% to 0.7% SL
+  const entryOffset = (r(1)>0.5?1:-1) * basePrice * 0.001 * r(1);
+  const entry = (basePrice + entryOffset).toFixed(basePrice<10?4:basePrice<200?2:0);
+  const slAmt = (basePrice * slPct).toFixed(basePrice<10?4:basePrice<200?2:0);
   const models=["2022 ICT Model","Silver Bullet","MMBM/MMSM","Turtle Soup+ICT","Liquidity Sweep","CHoCH Entry","BOS→FVG→OB","OTE Fibonacci"];
-  const trade={dir:bias==="Bullish"?"LONG":"SHORT",entry,sl:bias==="Bullish"?(entry-sl).toFixed(2):(+entry+ +sl).toFixed(2),tp1:bias==="Bullish"?(+entry+ +sl*2).toFixed(2):(entry-sl*2).toFixed(2),tp2:bias==="Bullish"?(+entry+ +sl*3.5).toFixed(2):(entry-sl*3.5).toFixed(2),rr:"1:3.5",risk:"1-2%",model:models[Math.floor(r(models.length))]};
+  const trade={dir:bias==="Bullish"?"LONG":"SHORT",entry,sl:bias==="Bullish"?(basePrice+entryOffset-basePrice*slPct).toFixed(basePrice<10?4:basePrice<200?2:0):(basePrice+entryOffset+basePrice*slPct).toFixed(basePrice<10?4:basePrice<200?2:0),tp1:bias==="Bullish"?(basePrice+entryOffset+basePrice*slPct*2).toFixed(basePrice<10?4:basePrice<200?2:0):(basePrice+entryOffset-basePrice*slPct*2).toFixed(basePrice<10?4:basePrice<200?2:0),tp2:bias==="Bullish"?(basePrice+entryOffset+basePrice*slPct*3.5).toFixed(basePrice<10?4:basePrice<200?2:0):(basePrice+entryOffset-basePrice*slPct*3.5).toFixed(basePrice<10?4:basePrice<200?2:0),rr:"1:3.5",risk:"1-2%",model:models[Math.floor(r(models.length))]};
   return{bias,conf,structure:structs[Math.floor(r(3))],dets,trade,sess,tfl:TFS.find(x=>x.v===S.tf)?.l||S.tf};
 }
 
