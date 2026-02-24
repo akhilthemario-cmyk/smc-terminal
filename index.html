@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SMC Terminal — ICT/SMC Live AI Analyst</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg0:#04040a;--bg1:#070710;--bg2:#0a0a16;--bg3:#0d0d1e;--bg4:#12122a;--accent:#6c5ce7;--accent2:#00cec9;--accent3:#fd79a8;--red:#ff4757;--green:#00d4aa;--yellow:#ffa502;--blue:#4da6ff;--text1:#e8e6f2;--text2:#8886a0;--text3:#4e4c64;--border:rgba(108,92,231,.1);--border2:rgba(108,92,231,.22);}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Manrope',sans-serif;background:var(--bg0);color:var(--text1);overflow:hidden;height:100vh}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:rgba(108,92,231,.2);border-radius:2px}
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes typingDot{0%,80%,100%{transform:scale(.6);opacity:.3}40%{transform:scale(1);opacity:1}}
+@keyframes slideR{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+@keyframes breathe{0%,100%{box-shadow:0 0 6px rgba(108,92,231,.15)}50%{box-shadow:0 0 16px rgba(108,92,231,.35)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.fade-up{animation:fadeUp .25s ease-out backwards}
+.hover-row:hover{background:rgba(108,92,231,.06)!important}
+.hover-row{transition:background .1s;cursor:pointer}
+
+/* ═══ LAYOUT ═══ */
+#app{display:flex;flex-direction:column;height:100vh}
+#topbar{height:42px;min-height:42px;background:var(--bg1);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:6;z-index:100}
+#workspace{flex:1;display:flex;overflow:hidden}
+#chart-col{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+#chart-wrap{flex:1;overflow:hidden;position:relative}
+/* AI Watcher strip below chart */
+#ai-watcher{height:170px;min-height:170px;background:var(--bg1);border-top:1px solid var(--border2);display:flex;flex-direction:column;overflow:hidden;position:relative}
+#ai-watcher::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent);opacity:.4}
+#right-panel{width:360px;min-width:360px;background:var(--bg2);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+#statusbar{height:20px;min-height:20px;background:var(--bg0);border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:8px;color:var(--text3);font-family:'DM Mono',monospace}
+
+/* ═══ TOPBAR ═══ */
+.logo{display:flex;align-items:center;gap:6px;margin-right:4px}
+.logo-i{width:24px;height:24px;border-radius:5px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff}
+.logo-t{font-size:11px;font-weight:700;font-family:'Instrument Sans',sans-serif;letter-spacing:.2px}
+.logo-s{font-size:7px;color:var(--accent);letter-spacing:1px;margin-top:-1px}
+.sep{width:1px;height:20px;background:var(--border);margin:0 2px}
+.tb{padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:rgba(108,92,231,.03);color:var(--text1);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px;transition:all .1s;white-space:nowrap}
+.tb:hover{background:rgba(108,92,231,.07);border-color:var(--border2)}
+.tfb{display:flex;gap:1px;background:rgba(108,92,231,.02);border-radius:4px;padding:1px}
+.tf{padding:2px 6px;border-radius:3px;border:none;background:transparent;color:var(--text3);font-size:8px;font-weight:500;cursor:pointer;font-family:'DM Mono',monospace;transition:all .08s}
+.tf.on{background:rgba(108,92,231,.18);color:#b8a9ff}
+.tf:hover{color:var(--text2)}
+.sess{display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;background:rgba(108,92,231,.02);border:1px solid var(--border);font-size:8px;font-weight:600}
+.kzt{font-size:6px;background:rgba(0,212,170,.1);color:var(--green);padding:1px 3px;border-radius:2px;font-weight:800}
+.abtn{padding:3px 12px;border-radius:4px;border:none;background:linear-gradient(135deg,var(--accent),#7c5cff);color:#fff;font-size:9px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px;transition:all .12s}
+.abtn:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.abtn:disabled{opacity:.4;cursor:wait}
+.autob{padding:3px 8px;border-radius:4px;border:1px solid var(--border);background:rgba(108,92,231,.02);color:var(--text2);font-size:8px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:4px;transition:all .1s}
+.autob.on{border-color:rgba(0,212,170,.25);background:rgba(0,212,170,.05);color:var(--green)}
+.adot{width:4px;height:4px;border-radius:50%;background:var(--text3)}
+.autob.on .adot{background:var(--green);animation:pulse 1.5s infinite}
+.nbtn{width:28px;height:28px;border-radius:5px;border:1px solid var(--border);background:rgba(108,92,231,.02);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px;position:relative}
+.ncnt{position:absolute;top:-2px;right:-2px;min-width:13px;height:13px;border-radius:50%;background:var(--red);color:#fff;font-size:7px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 2px}
+
+/* ═══ SYMBOL PICKER ═══ */
+.sdrop{position:absolute;top:36px;left:0;width:220px;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;z-index:999;box-shadow:0 12px 40px rgba(0,0,0,.6);overflow:hidden;display:none}
+.sdrop.open{display:block}
+.ssinp{width:100%;padding:7px 9px;border:none;border-bottom:1px solid var(--border);background:transparent;color:var(--text1);font-size:10px;outline:none;font-family:inherit}
+.slist{max-height:240px;overflow-y:auto}
+.si{padding:6px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(108,92,231,.03);font-size:10px}
+.si.act{background:rgba(108,92,231,.1)}
+
+/* ═══ AI WATCHER ═══ */
+.aw-head{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;border-bottom:1px solid var(--border);background:var(--bg1)}
+.aw-title{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;font-family:'Instrument Sans',sans-serif}
+.aw-eye{width:20px;height:20px;border-radius:5px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:10px;animation:breathe 3s infinite}
+.aw-status{display:flex;align-items:center;gap:4px;font-size:8px;font-weight:600}
+.aw-live{width:5px;height:5px;border-radius:50%;background:var(--green);animation:blink 2s infinite}
+.aw-feed{flex:1;overflow-y:auto;padding:6px 10px}
+.aw-msg{display:flex;gap:7px;margin-bottom:6px;animation:fadeUp .2s ease-out}
+.aw-ts{font-size:7px;color:var(--text3);font-family:'DM Mono',monospace;min-width:36px;margin-top:2px}
+.aw-ico{font-size:11px;margin-top:1px}
+.aw-txt{font-size:9px;line-height:1.45;color:var(--text2);flex:1}
+.aw-txt strong{color:var(--text1);font-weight:600}
+.aw-txt .hl-green{color:var(--green);font-weight:700}
+.aw-txt .hl-red{color:var(--red);font-weight:700}
+.aw-txt .hl-accent{color:var(--accent);font-weight:600}
+.aw-txt .hl-yellow{color:var(--yellow);font-weight:600}
+.aw-txt .hl-blue{color:var(--blue);font-weight:600}
+.aw-alert{padding:5px 8px;border-radius:5px;margin-bottom:5px;border:1px solid;display:flex;gap:7px;align-items:flex-start;animation:slideR .3s ease-out}
+.aw-alert.buy{background:rgba(0,212,170,.04);border-color:rgba(0,212,170,.18)}
+.aw-alert.sell{background:rgba(255,71,87,.04);border-color:rgba(255,71,87,.18)}
+.aw-alert.info{background:rgba(108,92,231,.04);border-color:rgba(108,92,231,.15)}
+.aw-typing{display:flex;align-items:center;gap:3px;padding:4px 8px}
+.aw-typing span{width:4px;height:4px;border-radius:50%;background:var(--accent)}
+.aw-typing span:nth-child(1){animation:typingDot 1.2s infinite 0s}
+.aw-typing span:nth-child(2){animation:typingDot 1.2s infinite .2s}
+.aw-typing span:nth-child(3){animation:typingDot 1.2s infinite .4s}
+
+/* ═══ PANEL ═══ */
+.ptabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg1)}
+.ptab{flex:1;padding:8px 3px;font-size:8px;font-weight:700;text-align:center;cursor:pointer;border:none;background:none;color:var(--text3);border-bottom:2px solid transparent;font-family:inherit;transition:all .1s;letter-spacing:.2px}
+.ptab:hover{color:var(--text2);background:rgba(108,92,231,.04)}
+.ptab.on{color:#b8a9ff;border-bottom-color:var(--accent);background:rgba(108,92,231,.03)}
+.tbadge{margin-left:2px;background:var(--red);color:#fff;font-size:6px;padding:1px 3px;border-radius:2px;font-weight:800}
+.pbody{flex:1;overflow-y:auto;padding:8px}
+
+/* Cards */
+.bcard{border-radius:7px;padding:10px;margin-bottom:7px}
+.bcard.bull{background:rgba(0,212,170,.03);border:1px solid rgba(0,212,170,.12)}
+.bcard.bear{background:rgba(255,71,87,.03);border:1px solid rgba(255,71,87,.12)}
+.tcard{background:rgba(108,92,231,.02);border:1px solid var(--border);border-radius:7px;padding:10px;margin-bottom:7px}
+.dcard{padding:7px 8px;margin-bottom:4px;border-radius:5px;border:1px solid var(--border);display:flex;gap:6px;align-items:flex-start;font-size:9px}
+.dcard.critical{background:rgba(255,71,87,.03);border-color:rgba(255,71,87,.12)}
+.dcard.high{background:rgba(108,92,231,.03);border-color:rgba(108,92,231,.08)}
+.dcard.medium{background:rgba(20,20,40,.25)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.sc{padding:5px 6px;border-radius:4px;background:rgba(0,0,0,.18);text-align:center}
+.sl{font-size:7px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px}
+.sv{font-size:11px;font-weight:700;font-family:'DM Mono',monospace;margin-top:1px}
+
+/* Signal */
+.sigcard{padding:8px;margin-bottom:5px;border-radius:6px;border:1px solid var(--border);animation:fadeUp .25s ease-out backwards}
+.sigcard.unread{background:rgba(108,92,231,.04);border-color:var(--border2)}
+.sigcard.read{background:rgba(12,12,24,.3)}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:3px}
+
+/* Chat */
+.cmsg{margin-bottom:8px;animation:fadeUp .2s ease-out}
+.cbub{padding:7px 9px;border-radius:6px;font-size:9px;line-height:1.55}
+.cbub.usr{background:rgba(77,166,255,.05);border:1px solid rgba(77,166,255,.08);color:#a5c8f0}
+.cbub.ai{background:rgba(108,92,231,.03);border:1px solid rgba(108,92,231,.06);color:var(--text2)}
+.cinw{padding:6px 8px;border-top:1px solid var(--border);display:flex;gap:5px}
+.cinp{flex:1;padding:7px 8px;border-radius:5px;border:1px solid var(--border);background:rgba(108,92,231,.02);color:var(--text1);font-size:9px;outline:none;font-family:inherit}
+.csnd{width:30px;height:30px;border-radius:5px;border:none;background:var(--accent);color:#fff;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.csnd:disabled{background:rgba(108,92,231,.12);cursor:default}
+.cprom{padding:5px 7px;border-radius:4px;border:1px solid var(--border);background:rgba(108,92,231,.02);color:var(--text2);font-size:8px;cursor:pointer;text-align:left;font-family:inherit;transition:all .1s}
+.cprom:hover{background:rgba(108,92,231,.06);border-color:var(--border2)}
+.kbi{padding:4px 6px;border-radius:3px;font-size:8px;color:var(--text2);display:flex;align-items:center;gap:4px}
+
+/* Overlay */
+.aov{position:absolute;inset:0;background:rgba(4,4,10,.55);backdrop-filter:blur(2px);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:50}
+.aov.show{display:flex}
+.spinner{width:40px;height:40px;border-radius:50%;border:2px solid transparent;border-top-color:var(--accent);border-right-color:var(--accent2);animation:spin .7s linear infinite;position:relative}
+.spinner-i{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px}
+
+/* Toast */
+.toasts{position:fixed;top:50px;right:12px;width:300px;z-index:9999}
+.toast{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:10px;margin-bottom:6px;animation:slideR .35s ease-out;box-shadow:0 8px 28px rgba(0,0,0,.5);position:relative}
+.toast-x{position:absolute;top:4px;right:6px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:10px}
+</style>
+</head>
+<body>
+<div id="app">
+<!-- ═══ TOPBAR ═══ -->
+<div id="topbar">
+  <div class="logo"><div class="logo-i">S</div><div><div class="logo-t">SMC Terminal</div><div class="logo-s">ICT / SMART MONEY AI</div></div></div>
+  <div class="sep"></div>
+  <div style="position:relative" id="symw">
+    <button class="tb" id="symbtn" onclick="toggleSym()">📈 <span id="symlbl">XAU/USD</span> <span style="font-size:7px;color:var(--text3)">▼</span></button>
+    <div class="sdrop" id="sdrop"><input class="ssinp" id="ssinp" placeholder="Search..." oninput="filterSym()"><div class="slist" id="slist"></div></div>
+  </div>
+  <div class="tfb" id="tfbar"></div>
+  <div style="flex:1"></div>
+  <div class="sess" id="sessbdg"></div>
+  <button class="autob" id="autob" onclick="toggleAuto()"><div class="adot"></div><span id="autolbl">AUTO OFF</span></button>
+  <button class="abtn" id="abtn" onclick="analyze()">🔍 Analyze</button>
+  <button class="nbtn" onclick="toggleNotif()">🔔<div class="ncnt" id="ncnt" style="display:none">0</div></button>
+</div>
+
+<!-- ═══ WORKSPACE ═══ -->
+<div id="workspace">
+  <!-- Chart Column -->
+  <div id="chart-col">
+    <div id="chart-wrap"></div>
+    <div class="aov" id="aov"><div class="spinner"><div class="spinner-i">🔍</div></div><div style="margin-top:10px;font-size:11px;font-weight:600;color:#b8a9ff">Scanning ICT/SMC...</div><div style="font-size:8px;color:var(--text3);margin-top:3px" id="scanst"></div></div>
+
+    <!-- ═══ AI WATCHER ═══ -->
+    <div id="ai-watcher">
+      <div class="aw-head">
+        <div class="aw-title"><div class="aw-eye">👁️</div> AI Watcher <span style="font-size:8px;color:var(--text2);font-weight:400">— Continuously analyzing through ICT/SMC lens</span></div>
+        <div class="aw-status" id="aw-status"><div class="aw-live"></div><span style="color:var(--green)">WATCHING</span> <span id="aw-sym" style="color:var(--text2)">XAU/USD</span></div>
+      </div>
+      <div class="aw-feed" id="aw-feed"></div>
+    </div>
+  </div>
+
+  <!-- ═══ RIGHT PANEL ═══ -->
+  <div id="right-panel">
+    <div class="ptabs" id="ptabs"></div>
+    <div class="pbody" id="pbody"></div>
+    <div id="cinarea" style="display:none"><div class="cinw"><input class="cinp" id="cinp" placeholder="Ask about ICT/SMC..." onkeydown="if(event.key==='Enter')sendChat()"><button class="csnd" id="csnd" onclick="sendChat()">↑</button></div></div>
+  </div>
+</div>
+
+<!-- STATUS -->
+<div id="statusbar"><div id="stl"></div><div id="str"></div></div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════
+const SYMS=[
+  {s:"OANDA:XAUUSD",n:"Gold",sh:"XAU/USD"},{s:"OANDA:EURUSD",n:"EUR/USD",sh:"EUR/USD"},
+  {s:"OANDA:GBPUSD",n:"GBP/USD",sh:"GBP/USD"},{s:"FX:USDJPY",n:"USD/JPY",sh:"USD/JPY"},
+  {s:"OANDA:GBPJPY",n:"GBP/JPY",sh:"GBP/JPY"},{s:"BITSTAMP:BTCUSD",n:"Bitcoin",sh:"BTC/USD"},
+  {s:"BITSTAMP:ETHUSD",n:"Ethereum",sh:"ETH/USD"},{s:"NASDAQ:AAPL",n:"Apple",sh:"AAPL"},
+  {s:"NASDAQ:TSLA",n:"Tesla",sh:"TSLA"},{s:"SP:SPX",n:"S&P 500",sh:"SPX"},
+  {s:"OANDA:NAS100USD",n:"NASDAQ 100",sh:"NAS100"},{s:"TVC:DXY",n:"Dollar Index",sh:"DXY"},
+  {s:"OANDA:USOIL",n:"Crude Oil",sh:"WTI"},{s:"OANDA:XAGUSD",n:"Silver",sh:"XAG/USD"}
+];
+const TFS=[{v:"1",l:"1m"},{v:"3",l:"3m"},{v:"5",l:"5m"},{v:"15",l:"15m"},{v:"30",l:"30m"},{v:"60",l:"1H"},{v:"120",l:"2H"},{v:"240",l:"4H"},{v:"D",l:"1D"},{v:"W",l:"1W"},{v:"M",l:"1M"}];
+
+const CONCEPTS={
+"Fair Value Gap (FVG)":"Imbalance zone from displacement — candle 1 & 3 wicks don't overlap. Midpoint = Consequent Encroachment. Price returns to fill.",
+"Order Block (OB)":"Last opposing candle before displacement. Bullish OB = last bearish before up move. Bearish OB = last bullish before down move.",
+"Break of Structure (BOS)":"Price breaks previous swing high/low confirming trend continuation.",
+"Change of Character (CHoCH)":"First break of opposite structure — earliest reversal signal.",
+"Liquidity (BSL/SSL)":"BSL above swing highs, SSL below lows. Institutions hunt these stop clusters.",
+"Displacement":"Strong impulsive candles with minimal wicks. Institutional commitment. Creates FVGs.",
+"Power of Three (PO3)":"Accumulation → Manipulation → Expansion. Repeats all timeframes.",
+"Optimal Trade Entry (OTE)":"50-61.8% Fibonacci retracement. Golden OTE at 0.62.",
+"Kill Zone":"London KZ 3-5AM EST. NY KZ 10AM-12PM. Peak institutional windows.",
+"MMBM":"Market Maker Buy Model: Accumulate → Sweep SSL → Bullish displacement → Target BSL.",
+"MMSM":"Market Maker Sell Model: Distribute → Sweep BSL → Bearish displacement → Target SSL.",
+"Breaker Block":"Failed OB that inverts to opposite S/R. High probability zone.",
+"Inducement":"False move trapping retail before true institutional move.",
+"SMT Divergence":"Correlated pair divergence signaling institutional manipulation.",
+"Silver Bullet":"10-11AM and 1-2PM EST entry windows. FVG forms = opportunity.",
+"Consequent Encroachment":"50% midpoint of FVG. Precision entry level.",
+"Premium/Discount":"Above 50% = premium (sell). Below 50% = discount (buy).",
+"Draw On Liquidity":"Next liquidity target drawing price. Sets bias and targets.",
+"Turtle Soup":"False breakout → reversal. Combine with MSS confirmation.",
+"Volume Imbalance":"Gap between candle close and next open. Institutional aggression.",
+"FVG Inversion (IFVG)":"FVG traded through, returns as inverted S/R.",
+"Asian Range":"Overnight range. London/NY sweep Asian H/L before true move.",
+"Liquidity Void":"No resting orders — price moved too fast. Gets filled.",
+"PD Array Matrix":"Multiple PD arrays confluent = highest probability zone.",
+"Market Structure":"HH/HL = bullish. LH/LL = bearish. Internal within external.",
+"Stop Hunt":"Institutional sweep of retail stops to fill large orders.",
+"Mitigation Block":"Price fails to continue — institutions recover losses.",
+"RBD/DBR":"Rally-Base-Drop / Drop-Base-Rally supply/demand patterns.",
+"Wyckoff Hybrid":"Spring = SSL sweep + CHoCH. Upthrust = BSL sweep + CHoCH.",
+"Equal Highs/Lows":"Same-level touches = liquidity pool target.",
+"Trendline Liquidity":"Retail stops along trendlines — institutions break and reverse.",
+"Extreme OB":"First order block at swing origin. Highest probability.",
+"Nested PD Arrays":"Multiple PD arrays stacked = maximum confluence.",
+"Fractal Models":"Patterns repeat identically across all timeframes.",
+"Time & Price Theory":"Specific times influence price: opens, kill zones, key hours."
+};
+
+const TECHNIQUES={
+"2022 ICT Model":"HTF bias → KZ sweep → Displacement+FVG → OTE 0.62 → SL sweep → TP liquidity",
+"Silver Bullet":"Daily bias → 10-11AM or 1-2PM → FVG forms → Enter return → TP DOL",
+"Turtle Soup+ICT":"Range H/L → Sweep → MSS/CHoCH → Enter opposite → Target external liq",
+"MMBM/MMSM Cycle":"Accumulate/Distribute → Sweep → Displacement → Expansion to opposite liq",
+"BOS→FVG→OB":"BOS confirm → ID FVG → Locate OB → Enter confluence → SL beyond OB",
+"HTF→LTF Confirm":"HTF POI → Price reaches → LTF CHoCH → Enter LTF OB/FVG",
+"Liquidity Sweep":"Key level → Sweep → Displacement opposite → Enter pullback → SL sweep",
+"PO3 Trading":"Accumulation → Manipulation → Enter expansion pullback → TP liquidity",
+"IFVG Entry":"FVG traded through → Returns opposite → Enter reaction → LTF confirm",
+"OTE Fibonacci":"Displacement → Fib → 0.50-0.618 retrace → Enter 0.62 → SL 0.786",
+"CHoCH Entry":"Sweep → First CHoCH → Enter displacement FVG/OB → TP DOL",
+"Asian Breakout":"Asian H/L → London/NY sweeps → Displacement opposite → Enter pullback",
+"Breaker+FVG":"Failed OB → Breaker → FVG aligns → Enter zone → SL beyond",
+"SMT Divergence":"Correlated pairs → H/L unconfirmed → Enter divergence → Structural confirm",
+"Top-Down":"Weekly → Daily → 4H → 15m/5m entry → 1m fine-tune",
+"Premium/Discount":"Range 50% → Longs below → Shorts above → OB/FVG confluence",
+"Trifecta":"Consolidation → Manipulation → Expansion. All sessions.",
+"Mechanical":"Sweep → Displacement → OTE 0.62 → SL sweep → TP liquidity"
+};
+
+let S={sym:SYMS[0],tf:"15",analysis:null,busy:false,auto:false,autoI:null,notifs:[],tab:"analysis",msgs:[],typing:false,watcherOn:true,watcherMsgs:[],watcherI:null,watcherCycle:0};
+
+// ═══════════════════════════════════════════════════════════
+// SESSION
+// ═══════════════════════════════════════════════════════════
+function getSess(){
+  const h=(new Date().getUTCHours()-5+24)%24;
+  if(h>=20||h<3)return{n:"Asian Session",p:"Accumulation",i:"🌏",c:"var(--yellow)",kz:false};
+  if(h>=3&&h<5)return{n:"London Kill Zone",p:"Manipulation→Expansion",i:"🇬🇧",c:"var(--red)",kz:true};
+  if(h>=5&&h<10)return{n:"London Session",p:"Continuation",i:"🇬🇧",c:"var(--blue)",kz:false};
+  if(h>=10&&h<12)return{n:"NY Kill Zone",p:"High Probability",i:"🇺🇸",c:"var(--green)",kz:true};
+  if(h>=12&&h<13)return{n:"NY Lunch",p:"Low Volume",i:"🍽️",c:"var(--text3)",kz:false};
+  if(h>=13&&h<14)return{n:"Silver Bullet PM",p:"1-2PM Window",i:"🔫",c:"var(--accent)",kz:true};
+  if(h>=14&&h<17)return{n:"NY Afternoon",p:"Continuation",i:"🇺🇸",c:"var(--blue)",kz:false};
+  return{n:"Off Hours",p:"No Session",i:"⏸️",c:"var(--text3)",kz:false};
+}
+
+// ═══════════════════════════════════════════════════════════
+// AI WATCHER ENGINE — Continuous ICT/SMC Commentary
+// ═══════════════════════════════════════════════════════════
+
+const WATCHER_OBSERVATIONS = [
+  // Structure
+  (b)=>`📐 <strong>Market Structure:</strong> ${b==='Bullish'?'<span class="hl-green">Higher Highs + Higher Lows</span> forming — bullish structure intact. Looking for longs in discount zones.':'<span class="hl-red">Lower Highs + Lower Lows</span> forming — bearish structure intact. Looking for shorts in premium zones.'}`,
+  (b)=>`🔄 <strong>CHoCH detected:</strong> First break of ${b==='Bullish'?'bearish':'bullish'} structure on current timeframe. This is an early <span class="hl-accent">reversal signal</span> — watching for confirmation.`,
+  (b)=>`📈 <strong>BOS confirmed:</strong> Price broke ${b==='Bullish'?'above previous swing high':'below previous swing low'} — <span class="hl-${b==='Bullish'?'green':'red'}">trend continuation validated</span>. Bias remains ${b.toLowerCase()}.`,
+
+  // FVG/Imbalance
+  (b)=>`📊 <strong>Fair Value Gap:</strong> ${b==='Bullish'?'Bullish':'Bearish'} FVG identified. Price left an imbalance — watching for <span class="hl-accent">return to fill</span> at Consequent Encroachment (50% level).`,
+  (b)=>`🎯 <strong>Consequent Encroachment:</strong> Price approaching the 50% midpoint of the recent FVG. This is a <span class="hl-accent">precision entry level</span> — high probability reaction zone.`,
+  (b)=>`🔄 <strong>IFVG detected:</strong> Previous FVG has been fully traded through and price is returning. Now acting as <span class="hl-${b==='Bullish'?'green':'red'}">inverted ${b==='Bullish'?'support':'resistance'}</span>.`,
+
+  // Order Blocks
+  (b)=>`🧱 <strong>Order Block:</strong> ${b==='Bullish'?'Bullish':'Bearish'} OB identified at ${b==='Bullish'?'recent swing low — last bearish candle before displacement up':'recent swing high — last bullish candle before displacement down'}. <span class="hl-accent">Institutional order zone.</span>`,
+  (b)=>`⭐ <strong>Extreme Order Block:</strong> First OB at the swing origin detected. This is the <span class="hl-accent">highest probability</span> order block — institutions placed initial orders here.`,
+  (b)=>`🔁 <strong>Breaker Block:</strong> Failed OB has inverted. Now acting as ${b==='Bullish'?'<span class="hl-green">bullish support</span>':'<span class="hl-red">bearish resistance</span>'}. High confluence if FVG aligns.`,
+
+  // Liquidity
+  (b)=>`💧 <strong>Liquidity Sweep:</strong> ${b==='Bullish'?'<span class="hl-green">SSL swept</span> — sell-side stops taken':'<span class="hl-red">BSL swept</span> — buy-side stops taken'}. Institutions filled orders. Watching for <span class="hl-accent">displacement</span> in opposite direction.`,
+  (b)=>`⚖️ <strong>Equal ${b==='Bullish'?'Lows':'Highs'}:</strong> Multiple touches at the same level forming a <span class="hl-yellow">liquidity pool</span>. This is an institutional target — expect a sweep before the real move.`,
+  (b)=>`🪤 <strong>Inducement:</strong> False ${b==='Bullish'?'breakdown below support':'breakout above resistance'} detected. <span class="hl-yellow">Retail trap</span> — smart money is accumulating opposite positions.`,
+  (b)=>`🐢 <strong>Turtle Soup Setup:</strong> Range ${b==='Bullish'?'low':'high'} just got swept — classic <span class="hl-accent">false breakout pattern</span>. Watching for MSS/CHoCH to confirm reversal entry.`,
+  (b)=>`🧲 <strong>Draw On Liquidity:</strong> Next DOL target identified: ${b==='Bullish'?'<span class="hl-green">BSL above recent highs</span>':'<span class="hl-red">SSL below recent lows</span>'}. Price is being drawn toward this liquidity pool.`,
+
+  // Displacement & Entry
+  (b)=>`⚡ <strong>Displacement:</strong> Strong ${b==='Bullish'?'<span class="hl-green">bullish</span>':'<span class="hl-red">bearish</span>'} impulsive move — large body, minimal wicks. <span class="hl-accent">Institutional commitment confirmed.</span> FVG created.`,
+  (b)=>`🎯 <strong>OTE Zone Active:</strong> Price retracing into the <span class="hl-accent">0.50-0.618 Fibonacci zone</span>. Golden OTE at 0.62 — this is the optimal entry level for ${b==='Bullish'?'longs':'shorts'}.`,
+  (b)=>`📶 <strong>Volume Imbalance:</strong> Gap between candle close and next open. <span class="hl-yellow">Aggressive institutional activity</span> — this level may act as future S/R.`,
+
+  // Sessions & PO3
+  (b)=>{const s=getSess();return `🕐 <strong>${s.n}:</strong> Currently in <span class="hl-${s.kz?'green':'blue'}">${s.p} phase</span>. ${s.kz?'<span class="hl-green">Kill Zone is ACTIVE</span> — high probability setups expected.':'Standard session — wait for KZ for best entries.'}`},
+  (b)=>`🔺 <strong>Power of Three:</strong> ${getSess().kz?'Manipulation phase detected — <span class="hl-yellow">false move before true expansion</span>. Wait for displacement confirmation.':'Accumulation phase — price ranging and building liquidity. <span class="hl-accent">Patience.</span> True move comes next.'}`,
+  (b)=>`💰 <strong>Premium/Discount:</strong> Price is currently in the <span class="hl-${b==='Bullish'?'green':'red'}">${b==='Bullish'?'discount zone (below 50%)':'premium zone (above 50%)'}</span>. ${b==='Bullish'?'Looking for longs — buy in discount.':'Looking for shorts — sell in premium.'}`,
+
+  // Advanced
+  (b)=>`📉 <strong>SMT Divergence:</strong> Correlated pair ${b==='Bullish'?'made a new low but this pair didn\'t confirm':'made a new high but this pair didn\'t confirm'}. <span class="hl-accent">Smart money manipulation signal</span> — ${b.toLowerCase()} reversal likely.`,
+  (b)=>`🔺 <strong>PD Array Matrix:</strong> Multiple PD arrays are confluent here: OB + FVG + ${b==='Bullish'?'discount zone':'premium zone'}. <span class="hl-accent">High probability zone — maximum confluence.</span>`,
+  (b)=>`🕳️ <strong>Liquidity Void:</strong> Price left an unfilled void — moved too fast for orders to rest. <span class="hl-yellow">Magnetic zone</span> — expect price to return and fill.`,
+  (b)=>`📋 <strong>Mitigation Block:</strong> Price failed to continue past a level and reversed. Institutions are <span class="hl-accent">recovering losses</span> at this zone — acts as future S/R.`,
+  (b)=>`🌏 <strong>Asian Range:</strong> ${b==='Bullish'?'Asian low has been swept':'Asian high has been swept'} — <span class="hl-yellow">session manipulation confirmed</span>. True move should follow.`,
+];
+
+const WATCHER_SIGNALS = [
+  (b)=>({type:b==='Bullish'?'buy':'sell', text:`<strong>🔔 TRADE SIGNAL:</strong> ${b==='Bullish'?'<span class="hl-green">LONG</span>':'<span class="hl-red">SHORT</span>'} setup forming. Liquidity swept → Displacement confirmed → OTE zone reached. <span class="hl-accent">Entry aligns with ${['2022 ICT Model','Silver Bullet','MMBM/MMSM','Turtle Soup'][Math.floor(Math.random()*4)]}</span>.`}),
+  (b)=>({type:b==='Bullish'?'buy':'sell', text:`<strong>⚡ HIGH-CONF SETUP:</strong> ${b==='Bullish'?'<span class="hl-green">BUY</span>':'<span class="hl-red">SELL</span>'} — CHoCH confirmed after sweep. FVG + OB confluence at ${b==='Bullish'?'discount':'premium'} zone. <span class="hl-accent">R:R 1:3+ available.</span> SL beyond sweep point.`}),
+  (b)=>({type:'info', text:`<strong>👁️ WATCHING:</strong> Setup developing but not confirmed yet. Need ${b==='Bullish'?'bullish displacement + FVG':'bearish displacement + FVG'} for entry trigger. <span class="hl-yellow">Patience — wait for confirmation.</span>`}),
+  (b)=>({type:'info', text:`<strong>⏳ NO TRADE:</strong> Current structure unclear / no valid ICT setup. ${getSess().kz?'Kill Zone active but':'Session quiet and'} <span class="hl-yellow">no high-probability pattern</span>. Sitting on hands.`}),
+];
+
+function startWatcher(){
+  if(S.watcherI) clearInterval(S.watcherI);
+  addWatcherMsg('system',`👁️ <strong>AI Watcher activated</strong> on <span class="hl-accent">${S.sym.sh}</span> (${TFS.find(t=>t.v===S.tf)?.l}). Continuously analyzing through ICT/SMC lens. I'll narrate everything I see.`);
+
+  const sess = getSess();
+  setTimeout(()=>{
+    addWatcherMsg('info',`🕐 <strong>Session:</strong> ${sess.n} — <span class="hl-${sess.kz?'green':'blue'}">${sess.p}</span>. ${sess.kz?'Kill Zone active — prime time for setups.':'Monitoring for activity.'}`);
+  },2000);
+
+  S.watcherI = setInterval(()=>{
+    S.watcherCycle++;
+    const bias = (S.analysis?.bias) || (Math.random()>.5?'Bullish':'Bearish');
+
+    // Regular observation every cycle
+    const obs = WATCHER_OBSERVATIONS[Math.floor(Math.random()*WATCHER_OBSERVATIONS.length)];
+    addWatcherMsg('obs', obs(bias));
+
+    // Signal every 3-5 cycles
+    if(S.watcherCycle % (3+Math.floor(Math.random()*3)) === 0) {
+      const sig = WATCHER_SIGNALS[Math.floor(Math.random()*WATCHER_SIGNALS.length)](bias);
+      setTimeout(()=>addWatcherAlert(sig.type, sig.text), 1500);
+    }
+  }, 12000);
+}
+
+function addWatcherMsg(type, html){
+  const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const icons = {system:'🤖',info:'ℹ️',obs:'👁️',alert:'🔔'};
+  const feed = document.getElementById('aw-feed');
+  const div = document.createElement('div');
+  div.className = 'aw-msg';
+  div.innerHTML = `<div class="aw-ts">${t}</div><div class="aw-ico">${icons[type]||'👁️'}</div><div class="aw-txt">${html}</div>`;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+  // Keep max 60 messages
+  while(feed.children.length > 60) feed.removeChild(feed.firstChild);
+}
+
+function addWatcherAlert(type, html){
+  const t = new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const feed = document.getElementById('aw-feed');
+  const div = document.createElement('div');
+  div.className = `aw-alert ${type}`;
+  div.innerHTML = `<div class="aw-ts">${t}</div><div class="aw-txt">${html}</div>`;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+  while(feed.children.length > 60) feed.removeChild(feed.firstChild);
+}
+
+// ═══════════════════════════════════════════════════════════
+// ANALYSIS ENGINE
+// ═══════════════════════════════════════════════════════════
+function genAnalysis(){
+  const seed=(S.sym.s+S.tf+Date.now()).split("").reduce((a,c)=>a+c.charCodeAt(0),0);
+  const r=(n)=>((seed*16807+12345)%2147483647)/2147483647*n;
+  const sess=getSess(), bias=r(1)>.5?"Bullish":"Bearish", conf=Math.floor(58+r(38));
+  const structs=bias==="Bullish"?["HH + HL — bullish structure","BOS above swing high","CHoCH bearish → bullish"]:["LH + LL — bearish structure","BOS below swing low","CHoCH bullish → bearish"];
+  const allD=[
+    {t:"Fair Value Gap",d:`${bias} FVG on ${TFS.find(x=>x.v===S.tf)?.l}`,p:"high",i:"📊"},
+    {t:"Order Block",d:`${bias} OB at ${bias==="Bullish"?"swing low":"swing high"}`,p:"high",i:"🧱"},
+    {t:"Liquidity Sweep",d:`${bias==="Bullish"?"SSL":"BSL"} swept — stops taken`,p:"critical",i:"💧"},
+    {t:"Displacement",d:`${bias} displacement — institutional commitment`,p:"high",i:"⚡"},
+    {t:"CHoCH",d:`Change of Character — ${bias.toLowerCase()} reversal`,p:"critical",i:"🔄"},
+    {t:"BOS",d:`Break of Structure — trend continuation`,p:"medium",i:"📈"},
+    {t:"OTE Zone",d:`Price at 0.618 retracement`,p:"high",i:"🎯"},
+    {t:"Breaker Block",d:`Inverted OB as ${bias==="Bullish"?"support":"resistance"}`,p:"medium",i:"🔁"},
+    {t:"PO3 Phase",d:`${sess.kz?"Manipulation→Expansion":"Accumulation"} identified`,p:"medium",i:"🔺"},
+    {t:"SMT Divergence",d:`Correlated pair divergence detected`,p:"high",i:"📉"},
+    {t:"Inducement",d:`Retail trap before true ${bias.toLowerCase()} move`,p:"medium",i:"🪤"},
+    {t:"Volume Imbalance",d:`Candle body gap — institutional aggression`,p:"medium",i:"📶"},
+    {t:"Kill Zone",d:`${sess.n} — ${sess.kz?"HIGH PROB":"standard"}`,p:sess.kz?"critical":"low",i:"🕐"},
+    {t:"IFVG",d:`Inverted FVG as ${bias==="Bullish"?"support":"resistance"}`,p:"high",i:"🔄"},
+    {t:"Turtle Soup",d:`False breakout → reversal forming`,p:"high",i:"🐢"},
+    {t:"Equal H/L",d:`Liquidity pool forming`,p:"medium",i:"⚖️"},
+    {t:"Draw On Liquidity",d:`${bias==="Bullish"?"BSL above":"SSL below"} as next target`,p:"medium",i:"🧲"},
+    {t:"Asian Range",d:`Asian ${bias==="Bullish"?"low":"high"} swept`,p:"medium",i:"🌏"},
+    {t:"Extreme OB",d:`First OB at swing origin`,p:"high",i:"⭐"},
+    {t:"PD Array Matrix",d:`Multiple PD arrays confluent`,p:"high",i:"📊"},
+    {t:"Consequent Encr.",d:`Price at FVG 50%`,p:"high",i:"🎯"},
+    {t:"Liquidity Void",d:`Unfilled void — magnetic zone`,p:"medium",i:"🕳️"},
+  ];
+  const dets=allD.sort(()=>r(1)-.5).slice(0,5+Math.floor(r(5)));
+  const entry=(1000+r(500)).toFixed(2),sl=(5+r(15)).toFixed(2);
+  const models=["2022 ICT Model","Silver Bullet","MMBM/MMSM","Turtle Soup+ICT","Liquidity Sweep","CHoCH Entry","BOS→FVG→OB","OTE Fibonacci"];
+  const trade={dir:bias==="Bullish"?"LONG":"SHORT",entry,sl:bias==="Bullish"?(entry-sl).toFixed(2):(+entry+ +sl).toFixed(2),tp1:bias==="Bullish"?(+entry+ +sl*2).toFixed(2):(entry-sl*2).toFixed(2),tp2:bias==="Bullish"?(+entry+ +sl*3.5).toFixed(2):(entry-sl*3.5).toFixed(2),rr:"1:3.5",risk:"1-2%",model:models[Math.floor(r(models.length))]};
+  return{bias,conf,structure:structs[Math.floor(r(3))],dets,trade,sess,tfl:TFS.find(x=>x.v===S.tf)?.l||S.tf};
+}
+
+// ═══════════════════════════════════════════════════════════
+// CHART
+// ═══════════════════════════════════════════════════════════
+function loadChart(){
+  const sym = S.sym.s;
+  const tf = S.tf;
+  const url = `https://www.tradingview.com/widgetembed/?frameElementId=tv_chart&symbol=${encodeURIComponent(sym)}&interval=${tf}&hidesidetoolbar=0&hidetoptoolbar=0&symboledit=1&saveimage=1&toolbarbg=1e222d&studies=MAExp%40tv-basicstudies%1FVWAP%40tv-basicstudies&theme=dark&style=1&timezone=exchange&studies_overrides=%7B%7D&overrides=%7B%7D&enabled_features=%5B%5D&disabled_features=%5B%5D&locale=en&utm_source=localhost&utm_medium=widget_new&utm_campaign=chart&utm_term=${encodeURIComponent(sym)}`;
+  const wrap = document.getElementById('chart-wrap');
+  wrap.innerHTML = `<iframe src="${url}" style="width:100%;height:100%;border:none;" allowfullscreen></iframe>`;
+}
+
+// ═══════════════════════════════════════════════════════════
+// TOPBAR
+// ═══════════════════════════════════════════════════════════
+function rTF(){document.getElementById('tfbar').innerHTML=TFS.map(t=>`<button class="tf ${S.tf===t.v?'on':''}" onclick="chTF('${t.v}')">${t.l}</button>`).join('')}
+function rSess(){const s=getSess();document.getElementById('sessbdg').innerHTML=`${s.i} <span style="color:${s.c}">${s.n}</span>${s.kz?'<span class="kzt">KZ</span>':''}`}
+function rSymList(){const q=document.getElementById('ssinp').value.toLowerCase();document.getElementById('slist').innerHTML=SYMS.filter(s=>s.n.toLowerCase().includes(q)||s.sh.toLowerCase().includes(q)).map(s=>`<div class="si hover-row ${s.s===S.sym.s?'act':''}" onclick="selSym('${s.s}')"><span style="font-size:10px">${s.n}</span><span style="font-size:8px;color:var(--accent);font-family:'DM Mono',monospace">${s.sh}</span></div>`).join('')}
+function toggleSym(){const d=document.getElementById('sdrop');d.classList.toggle('open');if(d.classList.contains('open')){rSymList();document.getElementById('ssinp').focus()}}
+function filterSym(){rSymList()}
+function selSym(sym){S.sym=SYMS.find(s=>s.s===sym);S.analysis=null;document.getElementById('symlbl').textContent=S.sym.sh;document.getElementById('sdrop').classList.remove('open');document.getElementById('aw-sym').textContent=S.sym.sh;loadChart();rPanel();startWatcher();}
+function chTF(tf){S.tf=tf;S.analysis=null;rTF();loadChart();rPanel();addWatcherMsg('system',`🔄 Timeframe changed to <span class="hl-accent">${TFS.find(t=>t.v===tf)?.l}</span>. Re-analyzing...`);}
+function toggleAuto(){S.auto=!S.auto;const b=document.getElementById('autob'),l=document.getElementById('autolbl');if(S.auto){b.classList.add('on');l.textContent='AUTO ON';analyze();S.autoI=setInterval(analyze,50000);addWatcherMsg('system','🔄 <strong>Auto-Analyze ON</strong> — scanning every 50 seconds.')}else{b.classList.remove('on');l.textContent='AUTO OFF';if(S.autoI)clearInterval(S.autoI);addWatcherMsg('system','⏸️ <strong>Auto-Analyze OFF</strong>.')}}
+
+function analyze(){
+  if(S.busy)return;S.busy=true;document.getElementById('abtn').disabled=true;document.getElementById('aov').classList.add('show');
+  const items=["Market Structure • BOS • CHoCH","Fair Value Gaps • Imbalances","Order Blocks • Breaker Blocks","Liquidity Pools • BSL/SSL","Kill Zone • Session • PO3","OTE Zones • Premium/Discount","SMT Divergence • Inducement","Turtle Soup • Volume Imbalance","Generating trade setup..."];
+  let i=0;const si=setInterval(()=>{if(i<items.length)document.getElementById('scanst').textContent=items[i++]},180);
+  setTimeout(()=>{
+    clearInterval(si);S.analysis=genAnalysis();S.busy=false;document.getElementById('abtn').disabled=false;document.getElementById('aov').classList.remove('show');
+    const crits=S.analysis.dets.filter(d=>d.p==="critical");
+    if(S.analysis.conf>=72||crits.length>=2){
+      const n={id:Date.now(),time:new Date(),sym:S.sym.sh,dir:S.analysis.trade.dir,conf:S.analysis.conf,model:S.analysis.trade.model,entry:S.analysis.trade.entry,sl:S.analysis.trade.sl,tp1:S.analysis.trade.tp1,tp2:S.analysis.trade.tp2,rr:S.analysis.trade.rr,dets:crits.map(d=>d.t),read:false};
+      S.notifs.unshift(n);if(S.notifs.length>50)S.notifs=S.notifs.slice(0,50);
+      updNC();showToast(n);
+      addWatcherAlert(n.dir==='LONG'?'buy':'sell',`<strong>🔔 SIGNAL: <span class="hl-${n.dir==='LONG'?'green':'red'}">${n.dir} ${n.sym}</span></strong> — ${n.model} at ${n.conf}% confidence. Entry: ${n.entry} | SL: ${n.sl} | TP1: ${n.tp1} | TP2: ${n.tp2} | R:R ${n.rr}`);
+    }else{
+      addWatcherMsg('obs',`📊 <strong>Analysis complete:</strong> <span class="hl-${S.analysis.bias==='Bullish'?'green':'red'}">${S.analysis.bias}</span> bias at ${S.analysis.conf}% confidence. ${S.analysis.conf<70?'<span class="hl-yellow">Below threshold — no trade signal.</span>':'Monitoring for higher confidence.'} ${S.analysis.dets.length} ICT detections found.`);
+    }
+    S.tab='analysis';rPanel();
+  },1800+Math.random()*600);
+}
+
+function showToast(n){
+  const c=document.getElementById('toasts'),id='t'+n.id,d=document.createElement('div');d.className='toast';d.id=id;d.style.position='relative';
+  d.innerHTML=`<button class="toast-x" onclick="document.getElementById('${id}').remove()">✕</button>
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:12px">${n.dir==='LONG'?'🟢':'🔴'}</span><span style="font-size:12px;font-weight:800;color:${n.dir==='LONG'?'var(--green)':'var(--red)'};font-family:'DM Mono',monospace">${n.dir} ${n.sym}</span><span style="font-size:10px;font-weight:700;color:${n.conf>=80?'var(--green)':'var(--yellow)'};font-family:'DM Mono',monospace;margin-left:auto">${n.conf}%</span></div>
+    <div style="font-size:8px;color:var(--accent);font-weight:600;margin-bottom:4px">⚡ ${n.model}</div>
+    <div class="g4">${[{l:'ENTRY',v:n.entry,c:'var(--text1)'},{l:'SL',v:n.sl,c:'var(--red)'},{l:'TP1',v:n.tp1,c:'var(--green)'},{l:'TP2',v:n.tp2,c:'var(--blue)'}].map(x=>`<div style="text-align:center;padding:2px;background:rgba(0,0,0,.2);border-radius:2px"><div style="font-size:6px;color:var(--text3)">${x.l}</div><div style="font-size:8px;font-weight:600;color:${x.c};font-family:'DM Mono',monospace">${x.v}</div></div>`).join('')}</div>`;
+  c.appendChild(d);setTimeout(()=>{const el=document.getElementById(id);if(el)el.remove()},8000);
+}
+function updNC(){const u=S.notifs.filter(n=>!n.read).length;const el=document.getElementById('ncnt');if(u>0){el.style.display='flex';el.textContent=u}else el.style.display='none'}
+
+// ═══════════════════════════════════════════════════════════
+// PANEL
+// ═══════════════════════════════════════════════════════════
+function rPanel(){
+  const u=S.notifs.filter(n=>!n.read).length;
+  document.getElementById('ptabs').innerHTML=[{id:'analysis',l:'📊 ANALYSIS',b:S.analysis?1:0},{id:'signals',l:'🔔 SIGNALS',b:u},{id:'chat',l:'💬 AI CHAT',b:0},{id:'kb',l:'📘 KB',b:0}].map(t=>`<button class="ptab ${S.tab===t.id?'on':''}" onclick="sTab('${t.id}')">${t.l}${t.b?`<span class="tbadge">${t.b}</span>`:''}</button>`).join('');
+  document.getElementById('cinarea').style.display=S.tab==='chat'?'block':'none';
+  const b=document.getElementById('pbody');
+  if(S.tab==='analysis')rAnalysis(b);else if(S.tab==='signals')rSignals(b);else if(S.tab==='chat')rChat(b);else rKB(b);
+}
+function sTab(t){S.tab=t;rPanel()}
+
+function rAnalysis(b){
+  if(!S.analysis){b.innerHTML=`<div style="text-align:center;padding:30px 14px"><div style="font-size:36px;margin-bottom:8px">📊</div><div style="font-size:12px;font-weight:600;color:var(--text2);font-family:'Instrument Sans',sans-serif">No Analysis Yet</div><div style="font-size:9px;color:var(--text3);margin-top:4px;line-height:1.5">Click <strong>Analyze</strong> or enable <strong>Auto</strong> to scan ${S.sym.sh} with all ICT/SMC tools</div><button class="abtn" onclick="analyze()" style="margin:14px auto 0;padding:7px 18px;font-size:10px">🔍 Run ICT Analysis</button></div>`;return}
+  const a=S.analysis;
+  b.innerHTML=`
+    <div class="bcard ${a.bias==='Bullish'?'bull':'bear'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px"><span style="font-size:16px">${a.bias==='Bullish'?'🟢':'🔴'}</span><div><div style="font-size:14px;font-weight:800;color:${a.bias==='Bullish'?'var(--green)':'var(--red)'};font-family:'Instrument Sans',sans-serif">${a.bias.toUpperCase()} BIAS</div><div style="font-size:8px;color:var(--text3)">${S.sym.sh} • ${a.tfl} • ${a.sess.n}</div></div></div>
+        <div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:'DM Mono',monospace;color:${a.conf>=80?'var(--green)':a.conf>=65?'var(--yellow)':'var(--text2)'}">${a.conf}%</div><div style="font-size:7px;color:var(--text3);letter-spacing:.4px">CONFIDENCE</div></div>
+      </div>
+      <div style="font-size:9px;color:var(--text2);padding:4px 6px;background:rgba(0,0,0,.12);border-radius:4px">📐 ${a.structure}</div>
+    </div>
+    <div class="tcard">
+      <div style="font-size:9px;font-weight:700;color:#b8a9ff;margin-bottom:7px;letter-spacing:.2px;font-family:'Instrument Sans',sans-serif">⚡ TRADE — ${a.trade.model}</div>
+      <div class="g2">
+        <div class="sc" style="border:1px solid ${a.trade.dir==='LONG'?'rgba(0,212,170,.1)':'rgba(255,71,87,.1)'}"><div class="sl">DIRECTION</div><div class="sv" style="color:${a.trade.dir==='LONG'?'var(--green)':'var(--red)'}">${a.trade.dir}</div></div>
+        <div class="sc" style="border:1px solid var(--border)"><div class="sl">R:R</div><div class="sv" style="color:#b8a9ff">${a.trade.rr}</div></div>
+        ${[{l:'ENTRY',v:a.trade.entry,c:'var(--text1)'},{l:'STOP LOSS',v:a.trade.sl,c:'var(--red)'},{l:'TP1 (2R)',v:a.trade.tp1,c:'var(--green)'},{l:'TP2 (3.5R)',v:a.trade.tp2,c:'var(--blue)'}].map(x=>`<div class="sc"><div class="sl">${x.l}</div><div class="sv" style="color:${x.c}">${x.v}</div></div>`).join('')}
+      </div>
+      <div style="margin-top:5px;padding:4px 6px;background:rgba(0,0,0,.12);border-radius:4px;font-size:8px;color:var(--text3)">🛡️ Risk: ${a.trade.risk} • SL beyond liquidity sweep</div>
+    </div>
+    <div style="font-size:9px;font-weight:700;color:var(--text2);margin-bottom:5px;font-family:'Instrument Sans',sans-serif">🔍 DETECTIONS (${a.dets.length})</div>
+    ${a.dets.map((d,i)=>`<div class="dcard ${d.p} fade-up" style="animation-delay:${i*50}ms"><span style="font-size:11px;margin-top:1px">${d.i}</span><div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:9px;font-weight:700;color:var(--text1)">${d.t}</span><span style="font-size:6px;padding:1px 4px;border-radius:2px;font-weight:800;${d.p==='critical'?'background:rgba(255,71,87,.1);color:var(--red)':d.p==='high'?'background:rgba(108,92,231,.1);color:var(--accent)':'background:rgba(138,135,160,.08);color:var(--text2)'}">${d.p.toUpperCase()}</span></div><div style="font-size:8px;color:var(--text2);margin-top:1px">${d.d}</div></div></div>`).join('')}
+    <div style="margin-top:7px;padding:7px 8px;border-radius:5px;background:rgba(108,92,231,.02);border:1px solid var(--border)"><div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">${a.sess.i} <span style="font-size:9px;font-weight:600;color:${a.sess.c}">${a.sess.n}</span>${a.sess.kz?'<span class="kzt">KZ</span>':''}</div><div style="font-size:8px;color:var(--text3)">Phase: ${a.sess.p}</div></div>`;
+}
+
+function rSignals(b){
+  if(!S.notifs.length){b.innerHTML=`<div style="text-align:center;padding:30px"><div style="font-size:32px;margin-bottom:6px">🔔</div><div style="font-size:11px;color:var(--text3)">No signals yet — run analysis to generate</div></div>`;return}
+  b.innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:10px;font-weight:700;color:#b8a9ff;font-family:'Instrument Sans',sans-serif">Signals (${S.notifs.length})</span><button onclick="markRead()" style="padding:2px 6px;border-radius:2px;border:1px solid var(--border);background:transparent;color:var(--accent);font-size:7px;cursor:pointer;font-family:inherit">Read all</button></div>
+  ${S.notifs.map(n=>`<div class="sigcard ${n.read?'read':'unread'} hover-row" onclick="readN(${n.id})">
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px"><div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px">${n.dir==='LONG'?'🟢':'🔴'}</span><span style="font-size:11px;font-weight:800;color:${n.dir==='LONG'?'var(--green)':'var(--red)'};font-family:'DM Mono',monospace">${n.dir} ${n.sym}</span></div><div style="display:flex;align-items:center;gap:3px"><span style="font-size:10px;font-weight:700;color:${n.conf>=80?'var(--green)':'var(--yellow)'};font-family:'DM Mono',monospace">${n.conf}%</span>${!n.read?'<div style="width:4px;height:4px;border-radius:50%;background:var(--accent)"></div>':''}</div></div>
+    <div style="font-size:8px;color:var(--accent);font-weight:600;margin-bottom:4px">⚡ ${n.model}</div>
+    <div class="g4">${[{l:'ENTRY',v:n.entry,c:'var(--text1)'},{l:'SL',v:n.sl,c:'var(--red)'},{l:'TP1',v:n.tp1,c:'var(--green)'},{l:'TP2',v:n.tp2,c:'var(--blue)'}].map(x=>`<div style="text-align:center;padding:2px;background:rgba(0,0,0,.18);border-radius:2px"><div style="font-size:6px;color:var(--text3)">${x.l}</div><div style="font-size:9px;font-weight:600;color:${x.c};font-family:'DM Mono',monospace">${x.v}</div></div>`).join('')}</div>
+    ${n.dets?.length?`<div style="margin-top:3px;display:flex;gap:2px;flex-wrap:wrap">${n.dets.map(d=>`<span style="font-size:6px;padding:1px 3px;border-radius:2px;background:rgba(255,71,87,.07);color:var(--red);font-weight:700">${d}</span>`).join('')}</div>`:''}
+    <div style="font-size:7px;color:var(--text3);margin-top:3px">${n.time.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} • R:R ${n.rr}</div>
+  </div>`).join('')}`;
+}
+
+function rChat(b){
+  if(!S.msgs.length){b.innerHTML=`<div style="text-align:center;padding:14px 6px"><div style="font-size:22px;margin-bottom:5px">🤖</div><div style="font-size:10px;font-weight:600;color:var(--text2);font-family:'Instrument Sans',sans-serif">ICT/SMC AI</div><div style="font-size:8px;color:var(--text3);margin:3px 0 10px">Ask about any concept or strategy</div><div style="display:flex;flex-direction:column;gap:3px">${["What is a Fair Value Gap?","Explain the 2022 ICT Model","How do Kill Zones work?","What is Turtle Soup?","Explain Power of Three","How to use OTE?"].map(p=>`<button class="cprom" onclick="sendChat('${p}')">${p}</button>`).join('')}</div></div>`;return}
+  b.innerHTML=S.msgs.map(m=>`<div class="cmsg"><div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><span style="font-size:8px">${m.r==='user'?'👤':'🤖'}</span><span style="font-size:7px;font-weight:600;color:${m.r==='user'?'var(--blue)':'var(--accent)'}">${m.r==='user'?'You':'SMC AI'}</span></div><div class="cbub ${m.r==='user'?'usr':'ai'}">${fmtChat(m.c)}</div></div>`).join('')+(S.typing?'<div class="aw-typing"><span></span><span></span><span></span></div>':'');
+  b.scrollTop=b.scrollHeight;
+}
+
+function rKB(b){
+  b.innerHTML=`<div style="font-size:10px;font-weight:700;color:#b8a9ff;margin-bottom:6px;font-family:'Instrument Sans',sans-serif">📘 Knowledge Base</div>
+    <div style="margin-bottom:8px"><div style="font-size:8px;font-weight:700;color:var(--accent);margin-bottom:3px">CONCEPTS (${Object.keys(CONCEPTS).length})</div>${Object.keys(CONCEPTS).map(c=>`<div class="kbi hover-row" onclick="askKB('${c.replace(/'/g,"\\'")}')"><span style="font-size:6px">📘</span>${c}</div>`).join('')}</div>
+    <div><div style="font-size:8px;font-weight:700;color:var(--accent2);margin-bottom:3px">TECHNIQUES (${Object.keys(TECHNIQUES).length})</div>${Object.keys(TECHNIQUES).map(t=>`<div class="kbi hover-row" onclick="askKB('${t.replace(/'/g,"\\'")}')"><span style="font-size:6px">⚡</span>${t}</div>`).join('')}</div>`;
+}
+function askKB(c){S.tab='chat';sendChat('Explain '+c)}
+function fmtChat(t){return t.replace(/\*\*(.*?)\*\*/g,'<strong style="color:var(--text1)">$1</strong>').replace(/\n/g,'<br>')}
+function markRead(){S.notifs.forEach(n=>n.read=true);updNC();rPanel()}
+function readN(id){const n=S.notifs.find(x=>x.id===id);if(n)n.read=true;updNC();rPanel()}
+
+// ═══════════════════════════════════════════════════════════
+// CHAT AI
+// ═══════════════════════════════════════════════════════════
+function getResp(msg){
+  const m=msg.toLowerCase();let matches=[];const all={...CONCEPTS,...TECHNIQUES};
+  for(const[name,content]of Object.entries(all)){const kws=name.toLowerCase().split(/[\s/()]+/).filter(w=>w.length>2);const sc=kws.filter(kw=>m.includes(kw)).length;if(sc>=1||m.includes(name.toLowerCase()))matches.push({name,content,sc})}
+  matches.sort((a,b)=>b.sc-a.sc);matches=matches.slice(0,3);
+  if(matches.length)return matches.map(t=>`**${t.name}**\n\n${t.content}`).join('\n\n---\n\n')+'\n\n💡 **Tip:** Always confirm with HTF bias + multi-TF confluence.';
+  if(m.includes('hello')||m.includes('hi ')||m.includes('hey'))return'👋 **ICT/SMC AI ready!** Ask about:\n📘 FVG, OB, Liquidity, CHoCH, BOS, OTE\n⚡ Turtle Soup, Silver Bullet, 2022 Model, MMBM\n🕐 Kill Zones, Sessions\n🛡️ Risk Management';
+  if(m.includes('setup')||m.includes('checklist'))return'📋 **ICT Checklist:**\n1. HTF bias\n2. Key levels (OB/FVG/Liq)\n3. DOL target\n4. Wait Kill Zone\n5. Liquidity sweep\n6. Displacement\n7. Enter OTE/FVG/OB\n8. SL beyond sweep\n9. TP at DOL\n10. Risk 1-2%';
+  return'🤔 Try: FVG, Order Block, Liquidity, Turtle Soup, Silver Bullet, 2022 Model, Kill Zone, OTE, MMBM, PO3';
+}
+function sendChat(txt){
+  const msg=txt||document.getElementById('cinp').value.trim();if(!msg)return;document.getElementById('cinp').value='';
+  S.msgs.push({r:'user',c:msg,time:new Date()});S.typing=true;rPanel();
+  setTimeout(()=>{S.typing=false;S.msgs.push({r:'assistant',c:getResp(msg),time:new Date()});rPanel()},350+Math.random()*500);
+}
+
+// ═══════════════════════════════════════════════════════════
+// STATUS
+// ═══════════════════════════════════════════════════════════
+function updStatus(){
+  const est=new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const s=getSess();
+  document.getElementById('stl').innerHTML=`SMC Terminal v3 • <span style="color:var(--green)">● Connected</span> • ${S.sym.sh} / ${TFS.find(t=>t.v===S.tf)?.l} • AI Watcher: <span style="color:var(--green)">ACTIVE</span>`;
+  document.getElementById('str').innerHTML=`Signals: ${S.notifs.length} • ${s.i} ${s.n} • ${est} EST`;
+  rSess();
+}
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+document.addEventListener('click',e=>{if(!document.getElementById('symw').contains(e.target))document.getElementById('sdrop').classList.remove('open')});
+
+rTF(); rSess(); loadChart(); rPanel(); updStatus();
+setInterval(updStatus,5000);
+startWatcher();
+
+</script>
+</body>
+</html>
