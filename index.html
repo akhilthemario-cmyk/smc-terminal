@@ -147,6 +147,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg0);color:var(--text1);o
 </div>
 <div class="toasts" id="toasts"></div>
 
+
 <script>
 // ═══════════════════════════════════════════════════════════
 // CONFIG
@@ -170,29 +171,41 @@ const SYMS=[
 const TFS=[{v:"1",l:"1m"},{v:"5",l:"5m"},{v:"15",l:"15m"},{v:"30",l:"30m"},{v:"60",l:"1H"},{v:"240",l:"4H"},{v:"D",l:"1D"},{v:"W",l:"1W"}];
 const PREF={'OANDA:XAUUSD':3320,'OANDA:EURUSD':1.085,'OANDA:GBPUSD':1.265,'FX:USDJPY':149.5,'OANDA:GBPJPY':189,'BITSTAMP:BTCUSD':107000,'BITSTAMP:ETHUSD':2600,'NASDAQ:AAPL':225,'NASDAQ:TSLA':340,'SP:SPX':5700,'OANDA:NAS100USD':20500,'TVC:DXY':104,'OANDA:USOIL':62,'OANDA:XAGUSD':33};
 
-const CONCEPTS={"Fair Value Gap (FVG)":"3-candle imbalance where candle 1 high < candle 3 low (bullish) or candle 1 low > candle 3 high (bearish). Price returns to fill.","Order Block (OB)":"Last opposing candle before displacement. Bullish OB = last bearish before up move.","Break of Structure (BOS)":"Price breaks swing H/L confirming trend.","Change of Character (CHoCH)":"First break of opposite structure — reversal signal.","Liquidity (BSL/SSL)":"BSL above swing highs, SSL below lows. Institutions target these.","Displacement":"3+ strong same-direction candles. Institutional commitment.","OTE Zone":"50-61.8% Fibonacci retracement. Optimal entry area.","Kill Zone":"London 3-5AM EST. NY 10AM-12PM EST. Peak institutional windows.","Premium/Discount":"Above 50% of range = premium. Below = discount.","Equal Highs/Lows":"Same-level touches = liquidity pool target."};
-const TECHNIQUES={"2022 ICT Model":"HTF bias → KZ sweep → Displacement+FVG → OTE → TP liquidity","Silver Bullet":"10-11AM or 1-2PM → FVG forms → Enter on return","Turtle Soup":"False breakout → reversal with MSS confirmation","Liquidity Sweep":"Key level swept → Displacement opposite → Enter pullback","OTE Fibonacci":"Enter at 0.618 retracement with FVG/OB confluence"};
+const CONCEPTS={"Fair Value Gap (FVG)":"3-candle imbalance where candle 1 high < candle 3 low (bullish) or candle 1 low > candle 3 high (bearish). Price returns to fill.","Order Block (OB)":"Last opposing candle before displacement. Bullish OB = last bearish before up move.","Break of Structure (BOS)":"Price breaks swing H/L confirming trend.","Change of Character (CHoCH)":"First break of opposite structure — reversal signal.","Liquidity (BSL/SSL)":"BSL above swing highs, SSL below lows. Institutions target these.","Displacement":"3+ strong same-direction candles with body > 2x average. Institutional commitment.","OTE Zone":"50-61.8% Fibonacci retracement. Optimal entry area.","Kill Zone":"London 3-5AM EST. NY 10AM-12PM EST. Peak institutional windows.","Premium/Discount":"Above 50% of range = premium (sell). Below = discount (buy).","Equal Highs/Lows":"Same-level touches = liquidity pool target.","MMBM":"Market Maker Buy Model: Accumulate → Sweep SSL → Bullish displacement → Target BSL.","MMSM":"Market Maker Sell Model: Distribute → Sweep BSL → Bearish displacement → Target SSL.","Breaker Block":"Failed OB that gets traded through and inverts to opposite S/R. High probability zone.","Silver Bullet":"10-11AM and 1-2PM EST windows. FVG forms during these = high probability entry.","Mitigation Block":"Zone where institutions return to recover losing positions. Acts as future S/R.","NDOG":"New Day Opening Gap — gap between previous day close and current day open. Acts as magnet.","Inducement":"False move trapping retail before true institutional move."};
+const TECHNIQUES={"2022 ICT Model":"HTF bias → KZ sweep → Displacement+FVG → OTE → TP liquidity","Silver Bullet":"10-11AM or 1-2PM → FVG forms → Enter on return","Turtle Soup":"False breakout → reversal with MSS confirmation","MMBM/MMSM":"Accumulate/Distribute → Sweep → Displacement → Expansion to opposite liquidity","Liquidity Sweep":"Key level swept → Displacement opposite → Enter pullback","OTE Fibonacci":"Enter at 0.618 retracement with FVG/OB confluence","Breaker Entry":"Failed OB traded through → returns as inverted S/R → enter with FVG","NDOG Trade":"Gap between prev close and open → price fills gap → enter on retest"};
 
-let S={sym:SYMS[0],tf:"15",analysis:null,busy:false,auto:false,autoI:null,notifs:[],tab:"analysis",msgs:[],typing:false,watcherI:null,watcherCycle:0,candles:[],livePrice:0,dataLive:false,dataI:null,fib:null,ict:null};
+let S={sym:SYMS[0],tf:"15",analysis:null,busy:false,auto:false,autoI:null,notifs:[],tab:"analysis",msgs:[],typing:false,watcherI:null,watcherCycle:0,candles:[],livePrice:0,dataLive:false,dataI:null,fib:null,ict:null,prevDayClose:0};
 
-// Format price based on magnitude
+// ═══ PRICE FORMATTING — always uses latest S.livePrice for decimal precision ═══
 function F(v){if(v==null||isNaN(v))return'—';const b=S.livePrice||PREF[S.sym.s]||100;return b<10?v.toFixed(4):b<200?v.toFixed(2):b<2000?v.toFixed(1):v.toFixed(0)}
 function Fc(v){const s=F(v);return Number(s).toLocaleString('en-US',{minimumFractionDigits:s.includes('.')?s.split('.')[1].length:0})}
 
 // ═══════════════════════════════════════════════════════════
-// SESSION DETECTION
+// SESSION DETECTION (enhanced with Silver Bullet windows)
 // ═══════════════════════════════════════════════════════════
-function getSess(){const h=(new Date().getUTCHours()-5+24)%24;if(h>=20||h<3)return{n:"Asian",p:"Accumulation",i:"🌏",c:"var(--yellow)",kz:false};if(h>=3&&h<5)return{n:"London KZ",p:"Manipulation",i:"🇬🇧",c:"var(--red)",kz:true};if(h>=5&&h<10)return{n:"London",p:"Continuation",i:"🇬🇧",c:"var(--blue)",kz:false};if(h>=10&&h<12)return{n:"NY KZ",p:"High Probability",i:"🇺🇸",c:"var(--green)",kz:true};if(h>=12&&h<13)return{n:"NY Lunch",p:"Low Volume",i:"🍽",c:"var(--text3)",kz:false};if(h>=13&&h<14)return{n:"Silver Bullet",p:"PM Window",i:"🔫",c:"var(--accent)",kz:true};if(h>=14&&h<17)return{n:"NY PM",p:"Continuation",i:"🇺🇸",c:"var(--blue)",kz:false};return{n:"Off Hours",p:"Wait",i:"⏸",c:"var(--text3)",kz:false}}
+function getSess(){
+  const h=(new Date().getUTCHours()-5+24)%24, mn=new Date().getUTCMinutes();
+  const hm=h+mn/60;
+  if(hm>=20||hm<3)return{n:"Asian",p:"Accumulation",i:"🌏",c:"var(--yellow)",kz:false,sb:false};
+  if(hm>=3&&hm<4)return{n:"London KZ",p:"Silver Bullet AM",i:"🇬🇧",c:"var(--red)",kz:true,sb:true};
+  if(hm>=4&&hm<5)return{n:"London KZ",p:"Manipulation→Expansion",i:"🇬🇧",c:"var(--red)",kz:true,sb:false};
+  if(hm>=5&&hm<10)return{n:"London",p:"Continuation",i:"🇬🇧",c:"var(--blue)",kz:false,sb:false};
+  if(hm>=10&&hm<11)return{n:"NY KZ",p:"Silver Bullet AM",i:"🇺🇸",c:"var(--green)",kz:true,sb:true};
+  if(hm>=11&&hm<12)return{n:"NY KZ",p:"High Probability",i:"🇺🇸",c:"var(--green)",kz:true,sb:false};
+  if(hm>=12&&hm<13)return{n:"NY Lunch",p:"Low Volume",i:"🍽",c:"var(--text3)",kz:false,sb:false};
+  if(hm>=13&&hm<14)return{n:"Silver Bullet PM",p:"1-2PM Window",i:"🔫",c:"var(--accent)",kz:true,sb:true};
+  if(hm>=14&&hm<17)return{n:"NY PM",p:"Continuation",i:"🇺🇸",c:"var(--blue)",kz:false,sb:false};
+  return{n:"Off Hours",p:"Wait",i:"⏸",c:"var(--text3)",kz:false,sb:false};
+}
 
 // ═══════════════════════════════════════════════════════════
-// 1. LIVE DATA ENGINE — Yahoo Finance via CORS proxy
+// LIVE DATA ENGINE — Yahoo Finance via CORS proxy
 // ═══════════════════════════════════════════════════════════
 async function fetchLiveData(){
   const yf=S.sym.yf;
   const tfMap={'1':'1m','5':'5m','15':'15m','30':'30m','60':'60m','240':'60m','D':'1d','W':'1wk'};
   const rangeMap={'1':'1d','5':'2d','15':'5d','30':'5d','60':'10d','240':'30d','D':'6mo','W':'1y'};
-  const interval=tfMap[S.tf]||'15m';
-  const range=rangeMap[S.tf]||'5d';
+  const interval=tfMap[S.tf]||'15m', range=rangeMap[S.tf]||'5d';
   const url=`https://corsproxy.io/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${yf}?interval=${interval}&range=${range}`)}`;
   try{
     const res=await fetch(url,{signal:AbortSignal.timeout(8000)});
@@ -208,6 +221,12 @@ async function fetchLiveData(){
     }
     S.candles=candles.slice(-100);
     S.livePrice=S.candles.length?S.candles[S.candles.length-1].c:PREF[S.sym.s]||0;
+    // Detect previous day close for NDOG
+    const now=new Date();
+    const todayStart=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+    for(let i=S.candles.length-1;i>=0;i--){
+      if(S.candles[i].t<todayStart){S.prevDayClose=S.candles[i].c;break}
+    }
     S.dataLive=true;
     document.getElementById('data-badge').textContent='LIVE';
     document.getElementById('data-badge').style.background='rgba(0,212,170,.12)';
@@ -227,24 +246,16 @@ async function fetchLiveData(){
 function startDataFeed(){
   if(S.dataI)clearInterval(S.dataI);
   fetchLiveData().then(ok=>{
-    if(ok){
-      awMsg('sys',`📡 <strong>Live data:</strong> <span class="a">${S.sym.sh}</span> — ${S.candles.length} candles loaded. Price: <span class="g">${Fc(S.livePrice)}</span>`);
-      runICT();
-    }else{
-      awMsg('sys',`⚠️ <strong>Offline mode</strong> for ${S.sym.sh}. Using reference price ${Fc(S.livePrice)}.`);
-    }
+    if(ok){awMsg('sys',`📡 <strong>Live data:</strong> <span class="a">${S.sym.sh}</span> — ${S.candles.length} candles. Price: <span class="g">${Fc(S.livePrice)}</span>`)}
+    else{awMsg('sys',`⚠️ <strong>Offline</strong> for ${S.sym.sh}. Ref price: ${Fc(S.livePrice)}`)}
   });
-  S.dataI=setInterval(async()=>{
-    const ok=await fetchLiveData();
-    if(ok&&S.candles.length>=20)runICT();
-    updPrice();
-  },30000);
+  S.dataI=setInterval(async()=>{await fetchLiveData();updPrice()},30000);
 }
 
 // ═══════════════════════════════════════════════════════════
-// 2. REAL ICT/SMC PATTERN DETECTION
+// ICT/SMC ANALYSIS ENGINE (FIXED: always uses passed candles, never stale)
 // ═══════════════════════════════════════════════════════════
-function findSwings(c,lb=4){
+function findSwings(c,lb=3){
   const highs=[],lows=[];
   for(let i=lb;i<c.length-lb;i++){
     let isH=true,isL=true;
@@ -258,11 +269,13 @@ function findSwings(c,lb=4){
   return{highs,lows};
 }
 
-function analyzeCandles(c){
+// FIX: This function takes candles directly and computes EVERYTHING fresh
+function freshAnalysis(){
+  const c=S.candles;
   if(c.length<20)return null;
   const price=c[c.length-1].c;
   const sw=findSwings(c,3);
-  const A={price,fvgs:[],obs:[],bos:null,choch:null,sweeps:[],eqHL:[],bias:'Neutral',structure:'',disp:null,pd:null,ote:null,sess:getSess(),dets:[],conf:35,trade:null};
+  const A={price,ts:Date.now(),fvgs:[],obs:[],breakers:[],mitigations:[],bos:null,choch:null,sweeps:[],eqHL:[],bias:'Neutral',structure:'',disp:null,pd:null,ote:null,ndog:null,mmbm:null,mmsm:null,sess:getSess(),dets:[],conf:35,trade:null};
 
   // ── MARKET BIAS: HH/HL vs LH/LL ──
   if(sw.highs.length>=2&&sw.lows.length>=2){
@@ -270,15 +283,17 @@ function analyzeCandles(c){
     let hh=0,lhc=0,hl=0,llc=0;
     for(let i=1;i<lh.length;i++){if(lh[i].p>lh[i-1].p)hh++;else lhc++}
     for(let i=1;i<ll.length;i++){if(ll[i].p>ll[i-1].p)hl++;else llc++}
-    if(hh>lhc&&hl>llc){A.bias='Bullish';A.structure=`HH(${hh})+HL(${hl}) — bullish`}
-    else if(lhc>hh&&llc>hl){A.bias='Bearish';A.structure=`LH(${lhc})+LL(${llc}) — bearish`}
+    if(hh>lhc&&hl>llc){A.bias='Bullish';A.structure='HH('+hh+')+HL('+hl+') — bullish'}
+    else if(lhc>hh&&llc>hl){A.bias='Bearish';A.structure='LH('+lhc+')+LL('+llc+') — bearish'}
     else A.structure='Mixed — ranging';
   }
 
-  // ── FAIR VALUE GAPS ──
+  // ── FVGs: use actual candle[i-1], candle[i], candle[i+1] ──
   for(let i=1;i<c.length-1;i++){
-    if(c[i-1].h<c[i+1].l) A.fvgs.push({type:'bull',top:c[i+1].l,bot:c[i-1].h,mid:(c[i+1].l+c[i-1].h)/2,idx:i});
-    if(c[i-1].l>c[i+1].h) A.fvgs.push({type:'bear',top:c[i-1].l,bot:c[i+1].h,mid:(c[i-1].l+c[i+1].h)/2,idx:i});
+    const gap_bull=c[i+1].l-c[i-1].h;
+    const gap_bear=c[i-1].l-c[i+1].h;
+    if(gap_bull>0) A.fvgs.push({type:'bull',top:c[i+1].l,bot:c[i-1].h,mid:(c[i+1].l+c[i-1].h)/2,idx:i,candle_t:c[i].t});
+    if(gap_bear>0) A.fvgs.push({type:'bear',top:c[i-1].l,bot:c[i+1].h,mid:(c[i-1].l+c[i+1].h)/2,idx:i,candle_t:c[i].t});
   }
 
   // ── ORDER BLOCKS ──
@@ -289,32 +304,80 @@ function analyzeCandles(c){
       if(c[j].c>c[j].o&&Math.abs(c[j].c-c[j].o)>avgBody*1.3)bullRun++;
       if(c[j].c<c[j].o&&Math.abs(c[j].c-c[j].o)>avgBody*1.3)bearRun++;
     }
-    if(bullRun>=3&&c[i-1].c<c[i-1].o) A.obs.push({type:'bull',hi:c[i-1].h,lo:c[i-1].l,mid:(c[i-1].h+c[i-1].l)/2,idx:i-1,strength:bullRun});
-    if(bearRun>=3&&c[i-1].c>c[i-1].o) A.obs.push({type:'bear',hi:c[i-1].h,lo:c[i-1].l,mid:(c[i-1].h+c[i-1].l)/2,idx:i-1,strength:bearRun});
+    if(bullRun>=3&&c[i-1].c<c[i-1].o)A.obs.push({type:'bull',hi:c[i-1].h,lo:c[i-1].l,mid:(c[i-1].h+c[i-1].l)/2,idx:i-1,strength:bullRun});
+    if(bearRun>=3&&c[i-1].c>c[i-1].o)A.obs.push({type:'bear',hi:c[i-1].h,lo:c[i-1].l,mid:(c[i-1].h+c[i-1].l)/2,idx:i-1,strength:bearRun});
   }
 
-  // ── BOS ──
+  // ── BREAKER BLOCKS: OB that price traded through, now inverted ──
+  for(let k=0;k<A.obs.length;k++){
+    const ob=A.obs[k];
+    let broken=false;
+    for(let j=ob.idx+1;j<c.length;j++){
+      if(ob.type==='bull'&&c[j].c<ob.lo){broken=true;break}
+      if(ob.type==='bear'&&c[j].c>ob.hi){broken=true;break}
+    }
+    if(broken){
+      const brkType=ob.type==='bull'?'bear':'bull'; // inverts
+      const touching=Math.abs(price-(brkType==='bull'?ob.lo:ob.hi))/price<0.003;
+      A.breakers.push({origType:ob.type,type:brkType,hi:ob.hi,lo:ob.lo,mid:ob.mid,touching});
+    }
+  }
+
+  // ── MITIGATION BLOCKS: failed continuation zones ──
+  for(let i=5;i<c.length-2;i++){
+    const prev=c.slice(i-5,i);
+    const bullPush=prev.filter(x=>x.c>x.o).length>=4;
+    const bearPush=prev.filter(x=>x.c<x.o).length>=4;
+    if(bullPush&&c[i].c<c[i].o&&c[i+1].c<c[i+1].o){
+      A.mitigations.push({type:'bear',hi:c[i].h,lo:Math.min(c[i].l,c[i+1].l),idx:i});
+    }
+    if(bearPush&&c[i].c>c[i].o&&c[i+1].c>c[i+1].o){
+      A.mitigations.push({type:'bull',hi:Math.max(c[i].h,c[i+1].h),lo:c[i].l,idx:i});
+    }
+  }
+
+  // ── BOS + CHoCH ──
   const last20H=Math.max(...c.slice(-20).map(x=>x.h));
   const last20L=Math.min(...c.slice(-20).map(x=>x.l));
-  if(price>last20H) A.bos={type:'bull',level:last20H};
-  else if(price<last20L) A.bos={type:'bear',level:last20L};
+  if(price>last20H)A.bos={type:'bull',level:last20H};
+  else if(price<last20L)A.bos={type:'bear',level:last20L};
+
+  // CHoCH: first break opposite to prevailing structure
+  if(sw.highs.length>=3&&sw.lows.length>=3){
+    const lastSwings=[];
+    sw.highs.forEach(h=>lastSwings.push({type:'h',p:h.p,i:h.i}));
+    sw.lows.forEach(l=>lastSwings.push({type:'l',p:l.p,i:l.i}));
+    lastSwings.sort((a,b)=>a.i-b.i);
+    const recent=lastSwings.slice(-6);
+    let prevDir=null,chochFound=false;
+    for(let i=1;i<recent.length&&!chochFound;i++){
+      if(recent[i].type==='h'&&i>0){
+        const prevH=recent.slice(0,i).filter(x=>x.type==='h').pop();
+        if(prevH){
+          const dir=recent[i].p>prevH.p?'bull':'bear';
+          if(prevDir&&dir!==prevDir){A.choch={type:dir,level:recent[i].p,idx:recent[i].i};chochFound=true}
+          prevDir=dir;
+        }
+      }
+    }
+  }
 
   // ── LIQUIDITY SWEEPS (last 8 candles) ──
   for(let i=Math.max(0,c.length-8);i<c.length;i++){
-    const lookback=c.slice(Math.max(0,i-20),i);
-    if(lookback.length<5)continue;
-    const prevH=Math.max(...lookback.map(x=>x.h));
-    const prevL=Math.min(...lookback.map(x=>x.l));
-    if(c[i].h>prevH*(1+0.001)&&c[i].c<prevH) A.sweeps.push({type:'bsl',level:prevH,wick:c[i].h,idx:i});
-    if(c[i].l<prevL*(1-0.001)&&c[i].c>prevL) A.sweeps.push({type:'ssl',level:prevL,wick:c[i].l,idx:i});
+    const lb=c.slice(Math.max(0,i-20),i);
+    if(lb.length<5)continue;
+    const prevH=Math.max(...lb.map(x=>x.h));
+    const prevL=Math.min(...lb.map(x=>x.l));
+    if(c[i].h>prevH*(1+0.001)&&c[i].c<prevH)A.sweeps.push({type:'bsl',level:prevH,wick:c[i].h,close:c[i].c,idx:i});
+    if(c[i].l<prevL*(1-0.001)&&c[i].c>prevL)A.sweeps.push({type:'ssl',level:prevL,wick:c[i].l,close:c[i].c,idx:i});
   }
 
-  // ── EQUAL HIGHS/LOWS ──
+  // ── EQUAL H/L ──
   const tol=price*0.001;
   for(let i=0;i<sw.highs.length;i++)for(let j=i+1;j<sw.highs.length;j++)
-    if(Math.abs(sw.highs[i].p-sw.highs[j].p)<tol) A.eqHL.push({type:'eqh',level:(sw.highs[i].p+sw.highs[j].p)/2,count:2});
+    if(Math.abs(sw.highs[i].p-sw.highs[j].p)<tol)A.eqHL.push({type:'eqh',level:(sw.highs[i].p+sw.highs[j].p)/2});
   for(let i=0;i<sw.lows.length;i++)for(let j=i+1;j<sw.lows.length;j++)
-    if(Math.abs(sw.lows[i].p-sw.lows[j].p)<tol) A.eqHL.push({type:'eql',level:(sw.lows[i].p+sw.lows[j].p)/2,count:2});
+    if(Math.abs(sw.lows[i].p-sw.lows[j].p)<tol)A.eqHL.push({type:'eql',level:(sw.lows[i].p+sw.lows[j].p)/2});
 
   // ── DISPLACEMENT ──
   const avg10=c.slice(-14,-4).reduce((s,x)=>s+Math.abs(x.c-x.o),0)/10||1;
@@ -322,7 +385,7 @@ function analyzeCandles(c){
   for(let i=c.length-4;i<c.length;i++){
     if(Math.abs(c[i].c-c[i].o)>avg10*2){dCnt++;dDir+=c[i].c>c[i].o?1:-1}
   }
-  if(dCnt>=2) A.disp={dir:dDir>0?'bull':'bear',strength:dCnt};
+  if(dCnt>=2)A.disp={dir:dDir>0?'bull':'bear',strength:dCnt};
 
   // ── PREMIUM/DISCOUNT ──
   if(sw.highs.length&&sw.lows.length){
@@ -337,7 +400,6 @@ function analyzeCandles(c){
     const range=Math.abs(sH-sL);
     if(range>0){
       if(sw.highs[sw.highs.length-1].i>sw.lows[sw.lows.length-1].i){
-        // Swing up, looking for retrace down
         A.ote={top:sL+range*0.618,bot:sL+range*0.5,golden:sL+range*0.618,sH,sL};
       }else{
         A.ote={top:sH-range*0.5,bot:sH-range*0.618,golden:sH-range*0.618,sH,sL};
@@ -345,18 +407,47 @@ function analyzeCandles(c){
     }
   }
 
-  // ── BUILD DETECTIONS LIST ──
+  // ── NDOG (New Day Opening Gap) ──
+  if(S.prevDayClose&&c.length>1){
+    const todayOpen=c.find(x=>{const d=new Date(x.t);return d.getHours()>=0})?.o||c[0].o;
+    const gap=todayOpen-S.prevDayClose;
+    if(Math.abs(gap)/price>0.0005){
+      A.ndog={prevClose:S.prevDayClose,todayOpen,gap,filled:A.bias==='Bullish'?(price<=S.prevDayClose):(price>=S.prevDayClose)};
+    }
+  }
+
+  // ── MMBM/MMSM detection ──
+  if(A.sweeps.length&&A.disp){
+    const lastSweep=A.sweeps[A.sweeps.length-1];
+    if(lastSweep.type==='ssl'&&A.disp.dir==='bull'){
+      A.mmbm={swept:lastSweep.level,wick:lastSweep.wick,dispDir:'bull',dispStrength:A.disp.strength,
+        target:A.eqHL.filter(e=>e.type==='eqh').pop()?.level||A.pd?.hi||price*1.005};
+    }
+    if(lastSweep.type==='bsl'&&A.disp.dir==='bear'){
+      A.mmsm={swept:lastSweep.level,wick:lastSweep.wick,dispDir:'bear',dispStrength:A.disp.strength,
+        target:A.eqHL.filter(e=>e.type==='eql').pop()?.level||A.pd?.lo||price*0.995};
+    }
+  }
+
+  // ── BUILD DETECTIONS ──
   const d=A.dets;
-  A.fvgs.slice(-3).forEach(f=>d.push({t:"FVG",d:`${f.type==='bull'?'Bullish':'Bearish'} FVG: ${Fc(f.bot)} — ${Fc(f.top)}, CE: ${Fc(f.mid)}`,p:"high",i:"📊"}));
-  A.obs.slice(-2).forEach(o=>d.push({t:"Order Block",d:`${o.type==='bull'?'Bullish':'Bearish'} OB: ${Fc(o.lo)} — ${Fc(o.hi)} (${o.strength}-candle displacement)`,p:"high",i:"🧱"}));
-  if(A.bos)d.push({t:"BOS",d:`${A.bos.type==='bull'?'Bullish':'Bearish'} — broke ${Fc(A.bos.level)}`,p:"medium",i:"📈"});
-  A.sweeps.forEach(s=>d.push({t:"Liquidity Sweep",d:`${s.type==='bsl'?'BSL':'SSL'} swept at ${Fc(s.level)}, wick to ${Fc(s.wick)}`,p:"critical",i:"💧"}));
-  A.eqHL.slice(-2).forEach(e=>d.push({t:e.type==='eqh'?"Equal Highs":"Equal Lows",d:`${e.type==='eqh'?'BSL':'SSL'} pool at ${Fc(e.level)}`,p:"medium",i:"⚖️"}));
-  if(A.disp)d.push({t:"Displacement",d:`${A.disp.dir==='bull'?'Bullish':'Bearish'} — ${A.disp.strength} strong candles`,p:"high",i:"⚡"});
-  if(A.pd)d.push({t:"Premium/Discount",d:`${A.pd.zone.toUpperCase()} (${A.pd.pct}%). EQ: ${Fc(A.pd.eq)}`,p:"medium",i:"💰"});
+  A.fvgs.slice(-3).forEach(f=>d.push({t:"FVG",d:(f.type==='bull'?'Bullish':'Bearish')+' FVG: '+Fc(f.bot)+' — '+Fc(f.top)+', CE: '+Fc(f.mid),p:"high",i:"📊"}));
+  A.obs.slice(-2).forEach(o=>d.push({t:"Order Block",d:(o.type==='bull'?'Bullish':'Bearish')+' OB: '+Fc(o.lo)+' — '+Fc(o.hi)+' ('+o.strength+'x disp)',p:"high",i:"🧱"}));
+  if(A.bos)d.push({t:"BOS",d:(A.bos.type==='bull'?'Bullish':'Bearish')+' — broke '+Fc(A.bos.level),p:"medium",i:"📈"});
+  if(A.choch)d.push({t:"CHoCH",d:(A.choch.type==='bull'?'Bullish':'Bearish')+' reversal at '+Fc(A.choch.level),p:"critical",i:"🔄"});
+  A.sweeps.forEach(s=>d.push({t:"Liquidity Sweep",d:(s.type==='bsl'?'BSL':'SSL')+' swept at '+Fc(s.level)+', wick to '+Fc(s.wick),p:"critical",i:"💧"}));
+  A.breakers.slice(-2).forEach(b=>d.push({t:"Breaker Block",d:(b.type==='bull'?'Bullish':'Bearish')+' breaker '+Fc(b.lo)+' — '+Fc(b.hi)+(b.touching?' ← PRICE HERE':''),p:b.touching?"critical":"high",i:"🔁"}));
+  A.mitigations.slice(-1).forEach(m=>d.push({t:"Mitigation",d:(m.type==='bull'?'Bullish':'Bearish')+' mitigation '+Fc(m.lo)+' — '+Fc(m.hi),p:"medium",i:"🔃"}));
+  A.eqHL.slice(-2).forEach(e=>d.push({t:e.type==='eqh'?"Equal Highs":"Equal Lows",d:(e.type==='eqh'?'BSL':'SSL')+' pool at '+Fc(e.level),p:"medium",i:"⚖️"}));
+  if(A.disp)d.push({t:"Displacement",d:(A.disp.dir==='bull'?'Bullish':'Bearish')+' — '+A.disp.strength+' strong candles',p:"high",i:"⚡"});
+  if(A.pd)d.push({t:"Premium/Discount",d:A.pd.zone.toUpperCase()+' ('+A.pd.pct+'%). EQ: '+Fc(A.pd.eq),p:"medium",i:"💰"});
   if(A.ote){const inOTE=price>=Math.min(A.ote.bot,A.ote.top)&&price<=Math.max(A.ote.bot,A.ote.top);
-    d.push({t:"OTE Zone",d:`${Fc(A.ote.bot)} — ${Fc(A.ote.top)}${inOTE?' ← PRICE IN OTE':''}`,p:inOTE?"critical":"medium",i:"🎯"})}
-  if(A.sess.kz)d.push({t:"Kill Zone",d:`${A.sess.n} ACTIVE`,p:"critical",i:"🕐"});
+    d.push({t:"OTE Zone",d:Fc(A.ote.bot)+' — '+Fc(A.ote.top)+(inOTE?' ← PRICE IN OTE':''),p:inOTE?"critical":"medium",i:"🎯"})}
+  if(A.mmbm)d.push({t:"MMBM",d:'SSL swept '+Fc(A.mmbm.swept)+' → Bull disp → Target BSL '+Fc(A.mmbm.target),p:"critical",i:"📈"});
+  if(A.mmsm)d.push({t:"MMSM",d:'BSL swept '+Fc(A.mmsm.swept)+' → Bear disp → Target SSL '+Fc(A.mmsm.target),p:"critical",i:"📉"});
+  if(A.ndog)d.push({t:"NDOG",d:'Gap: '+Fc(A.ndog.prevClose)+' → '+Fc(A.ndog.todayOpen)+(A.ndog.filled?' (FILLED)':' (OPEN)'),p:"medium",i:"📅"});
+  if(A.sess.kz)d.push({t:"Kill Zone",d:A.sess.n+' ACTIVE'+(A.sess.sb?' — Silver Bullet window':''),p:"critical",i:"🕐"});
+  if(A.sess.sb)d.push({t:"Silver Bullet",d:'SB window active — look for FVG forming NOW',p:"critical",i:"🔫"});
 
   // ── CONFIDENCE ──
   let conf=35;
@@ -366,44 +457,54 @@ function analyzeCandles(c){
   if(A.sweeps.length)conf+=15;
   if(A.disp)conf+=10;
   if(A.sess.kz)conf+=8;
+  if(A.choch)conf+=5;
+  if(A.breakers.some(b=>b.touching))conf+=8;
+  if(A.mmbm||A.mmsm)conf+=10;
   if(A.ote){const inOTE=price>=Math.min(A.ote.bot,A.ote.top)&&price<=Math.max(A.ote.bot,A.ote.top);if(inOTE)conf+=12}
   A.conf=Math.min(conf,98);
 
-  // ── TRADE SETUP (only with real confluence) ──
-  const hasSweep=A.sweeps.length>0;
-  const hasDisp=A.disp!==null;
-  const hasFVGorOB=A.fvgs.length>0||A.obs.length>0;
+  // ── TRADE SETUP ──
+  const hasSweep=A.sweeps.length>0, hasDisp=A.disp!==null, hasPOI=A.fvgs.length>0||A.obs.length>0||A.breakers.some(b=>b.touching);
   const inOTE=A.ote&&price>=Math.min(A.ote.bot,A.ote.top)&&price<=Math.max(A.ote.bot,A.ote.top);
-  const kzActive=A.sess.kz;
-
-  if(A.bias!=='Neutral'&&hasFVGorOB&&(hasSweep||hasDisp)&&(inOTE||kzActive||A.conf>=75)){
+  if(A.bias!=='Neutral'&&hasPOI&&(hasSweep||hasDisp)&&(inOTE||A.sess.kz||A.conf>=75)){
     const dir=A.bias==='Bullish'?'LONG':'SHORT';
-    const entryRef=A.fvgs.length?A.fvgs[A.fvgs.length-1].mid:A.obs[A.obs.length-1].mid;
+    // Entry: nearest FVG mid, OB mid, or breaker
+    let entryRef=price;
+    if(A.fvgs.length)entryRef=A.fvgs[A.fvgs.length-1].mid;
+    else if(A.obs.length)entryRef=A.obs[A.obs.length-1].mid;
+    else if(A.breakers.length)entryRef=A.breakers[A.breakers.length-1].mid;
     const sweepWick=A.sweeps.length?A.sweeps[A.sweeps.length-1].wick:null;
-    const slLev=dir==='LONG'?(sweepWick&&sweepWick<entryRef?sweepWick:entryRef*(1-0.005)):(sweepWick&&sweepWick>entryRef?sweepWick:entryRef*(1+0.005));
+    let slLev;
+    if(dir==='LONG')slLev=sweepWick&&sweepWick<entryRef?sweepWick-(Math.abs(entryRef-sweepWick)*0.1):entryRef*(1-0.004);
+    else slLev=sweepWick&&sweepWick>entryRef?sweepWick+(Math.abs(sweepWick-entryRef)*0.1):entryRef*(1+0.004);
     const slDist=Math.abs(entryRef-slLev);
-    const tpTarget=A.eqHL.length?A.eqHL[A.eqHL.length-1].level:dir==='LONG'?entryRef+slDist*3.5:entryRef-slDist*3.5;
+    const tpTarget=A.eqHL.length?A.eqHL[A.eqHL.length-1].level:(dir==='LONG'?entryRef+slDist*3.5:entryRef-slDist*3.5);
     const rr=(Math.abs(tpTarget-entryRef)/slDist).toFixed(1);
-    const models=["2022 ICT Model","Silver Bullet","Liquidity Sweep","OTE Fibonacci","Turtle Soup"];
-    let model=models[0];
-    if(hasSweep&&hasDisp)model="Liquidity Sweep";if(kzActive&&A.fvgs.length)model="Silver Bullet";if(inOTE)model="OTE Fibonacci";
-    A.trade={dir,entry:F(entryRef),sl:F(slLev),tp1:F(dir==='LONG'?entryRef+slDist*2:entryRef-slDist*2),tp2:F(tpTarget),rr:'1:'+rr,risk:"1-2%",model};
+    let model="2022 ICT Model";
+    if(A.mmbm)model="MMBM";else if(A.mmsm)model="MMSM";
+    else if(A.sess.sb)model="Silver Bullet";
+    else if(hasSweep&&hasDisp)model="Liquidity Sweep";
+    else if(A.breakers.some(b=>b.touching))model="Breaker Entry";
+    else if(inOTE)model="OTE Fibonacci";
+    const entryReason=[];
+    if(A.fvgs.length){const f=A.fvgs[A.fvgs.length-1];entryReason.push((f.type==='bull'?'Bull':'Bear')+' FVG '+Fc(f.bot)+'-'+Fc(f.top))}
+    if(A.obs.length){const o=A.obs[A.obs.length-1];entryReason.push((o.type==='bull'?'Bull':'Bear')+' OB '+Fc(o.lo)+'-'+Fc(o.hi))}
+    if(A.breakers.some(b=>b.touching))entryReason.push('Breaker confluence');
+    A.trade={dir,entry:F(entryRef),sl:F(slLev),tp1:F(dir==='LONG'?entryRef+slDist*2:entryRef-slDist*2),tp2:F(tpTarget),rr:'1:'+rr,risk:"1-2%",model,entryReason:entryReason.join(' + '),slReason:sweepWick?'Beyond sweep wick '+Fc(sweepWick):'Beyond OB/structure'};
   }
   return A;
 }
 
 // ═══════════════════════════════════════════════════════════
-// 3. FIBONACCI CALCULATOR
+// FIBONACCI
 // ═══════════════════════════════════════════════════════════
 function calcFib(c){
   if(c.length<10)return null;
   const recent=c.slice(-30);
-  const sH=Math.max(...recent.map(x=>x.h));
-  const sL=Math.min(...recent.map(x=>x.l));
+  const sH=Math.max(...recent.map(x=>x.h)), sL=Math.min(...recent.map(x=>x.l));
   const range=sH-sL;if(range<=0)return null;
   const price=c[c.length-1].c;
-  const ratios=[0,0.236,0.382,0.5,0.618,0.705,0.786,1];
-  const levels=ratios.map(r=>({r,price:sH-range*r,label:r===0?'0 (High)':r===1?'1.0 (Low)':String(r)}));
+  const levels=[0,0.236,0.382,0.5,0.618,0.705,0.786,1].map(r=>({r,price:sH-range*r,label:r===0?'0 (High)':r===1?'1.0 (Low)':String(r)}));
   return{sH,sL,range,levels,price,pct:((sH-price)/range*100).toFixed(1),inOTE:price<=(sH-range*0.5)&&price>=(sH-range*0.618)};
 }
 
@@ -413,120 +514,183 @@ function showFib(){
   if(!S.fib){fp.style.display='none';return}
   fp.style.display='block';
   const f=S.fib;
-  fp.innerHTML=`<div style="padding:5px 8px;background:var(--bg3);border-top:1px solid var(--border)">
-    <div style="font-size:7px;font-weight:700;color:#b8a9ff;margin-bottom:3px">📐 FIB: ${Fc(f.sH)} → ${Fc(f.sL)} | Price at ${f.pct}% ${f.inOTE?'<span style="color:var(--green)">IN OTE</span>':''}</div>
+  fp.innerHTML=`<div style="padding:4px 8px;background:var(--bg3);border-top:1px solid var(--border)">
+    <div style="font-size:7px;font-weight:700;color:#b8a9ff;margin-bottom:2px">📐 FIB: ${Fc(f.sH)} → ${Fc(f.sL)} | ${f.pct}% ${f.inOTE?'<span style="color:var(--green)">IN OTE</span>':''}</div>
     <div class="fib-bar">${f.levels.map(lv=>{
-      const isOTE=lv.r>=0.5&&lv.r<=0.618;
-      const near=Math.abs(f.price-lv.price)/f.range<0.025;
+      const isOTE=lv.r>=0.5&&lv.r<=0.618;const near=Math.abs(f.price-lv.price)/f.range<0.025;
       return`<div class="fib-lv" style="background:${near?'rgba(108,92,231,.15)':isOTE?'rgba(0,212,170,.06)':'rgba(0,0,0,.15)'};border:1px solid ${near?'var(--accent)':isOTE?'rgba(0,212,170,.15)':'transparent'}"><div class="fl">${lv.label}${isOTE?' ★':''}</div><div class="fv" style="color:${near?'var(--accent)':'var(--text1)'}">${Fc(lv.price)}</div></div>`}).join('')}</div></div>`;
 }
 
 // ═══════════════════════════════════════════════════════════
-// 4. AI WATCHER — Live ICT Narration
+// AI WATCHER — ALWAYS re-analyzes before narrating (PRICE FIX)
 // ═══════════════════════════════════════════════════════════
-function runICT(){
-  if(S.candles.length<20)return;
-  S.ict=analyzeCandles(S.candles);
-  S.fib=calcFib(S.candles);
-  showFib();
-  updPrice();
-}
-
 function startWatcher(){
   if(S.watcherI)clearInterval(S.watcherI);
   document.getElementById('aw-feed').innerHTML='';
-  awMsg('sys',`👁 <strong>AI Watcher</strong> on <span class="a">${S.sym.sh}</span> (${TFS.find(t=>t.v===S.tf)?.l}). Fetching live data...`);
+  awMsg('sys',`👁 <strong>AI Watcher</strong> on <span class="a">${S.sym.sh}</span> (${TFS.find(t=>t.v===S.tf)?.l}). Connecting...`);
   startDataFeed();
   S.watcherCycle=0;
   S.watcherI=setInterval(()=>{
     S.watcherCycle++;
-    if(!S.ict||!S.candles.length)return;
+    if(S.candles.length<20)return;
+    // FIX: always re-analyze from current candles before narrating
+    S.ict=freshAnalysis();
+    S.fib=calcFib(S.candles);
+    showFib(); updPrice();
     narrateICT();
   },12000);
 }
 
 function narrateICT(){
+  // A is guaranteed fresh — just computed from current S.candles
   const A=S.ict;if(!A)return;
-  const p=S.livePrice;
+  const p=A.price; // use the price FROM the analysis, not separate S.livePrice
   const pool=[];
 
-  // Real observations from actual detections
+  // ── Core structure ──
   pool.push(`📐 <strong>Structure:</strong> <span class="${A.bias==='Bullish'?'g':A.bias==='Bearish'?'r':'y'}">${A.bias}</span> — ${A.structure}. Price: <span class="a">${Fc(p)}</span>`);
 
-  if(A.fvgs.length){const f=A.fvgs[A.fvgs.length-1];const near=Math.abs(p-f.mid)/p<0.003;
-    pool.push(`📊 <strong>FVG:</strong> ${f.type==='bull'?'Bullish':'Bearish'} gap <span class="a">${Fc(f.bot)} — ${Fc(f.top)}</span>. CE: ${Fc(f.mid)}. ${near?'<span class="g">Price near fill zone!</span>':'Watching.'}`)}
+  // ── FVG with proximity check using A.price ──
+  if(A.fvgs.length){
+    const f=A.fvgs[A.fvgs.length-1];
+    const dist=Math.abs(p-f.mid);const near=dist/p<0.002;const inside=p>=f.bot&&p<=f.top;
+    pool.push(`📊 <strong>FVG:</strong> ${f.type==='bull'?'Bullish':'Bearish'} gap <span class="a">${Fc(f.bot)} — ${Fc(f.top)}</span>. CE: ${Fc(f.mid)}. ${inside?'<span class="g">Price INSIDE FVG — filling!</span>':near?'<span class="g">Price approaching fill zone!</span>':'Watching for return.'}`);
+  }
 
-  if(A.obs.length){const o=A.obs[A.obs.length-1];
-    pool.push(`🧱 <strong>OB:</strong> ${o.type==='bull'?'Bullish':'Bearish'} at <span class="a">${Fc(o.lo)} — ${Fc(o.hi)}</span>. ${o.strength}-candle displacement. ${Math.abs(p-o.mid)/p<0.005?'<span class="g">Price at OB!</span>':'Marked.'}`)}
+  // ── OB with tap detection ──
+  if(A.obs.length){
+    const o=A.obs[A.obs.length-1];
+    const tapped=p>=o.lo&&p<=o.hi;const near=Math.abs(p-o.mid)/p<0.003;
+    if(tapped||near){
+      pool.push(`🧱 <strong>OB TAP:</strong> Price ${Fc(p)} ${tapped?'inside':'near'} ${o.type==='bull'?'Bullish':'Bearish'} OB <span class="a">${Fc(o.lo)} — ${Fc(o.hi)}</span>. ${o.strength}x displacement. <span class="${o.type==='bull'?'g':'r'}">Reaction zone!</span>`);
+    }else{
+      pool.push(`🧱 <strong>OB:</strong> ${o.type==='bull'?'Bullish':'Bearish'} at <span class="a">${Fc(o.lo)} — ${Fc(o.hi)}</span>. ${o.strength}x disp.`);
+    }
+  }
 
+  // ── Sweeps ──
   if(A.sweeps.length){const s=A.sweeps[A.sweeps.length-1];
-    pool.push(`💧 <strong>Sweep:</strong> ${s.type==='bsl'?'<span class="r">BSL</span>':'<span class="g">SSL</span>'} swept at ${Fc(s.level)}, wick ${Fc(s.wick)}. Stops taken.`)}
+    pool.push(`💧 <strong>Sweep:</strong> ${s.type==='bsl'?'<span class="r">BSL</span>':'<span class="g">SSL</span>'} swept at ${Fc(s.level)}, wick ${Fc(s.wick)}, closed back ${Fc(s.close)}. Stops taken — watching for reversal.`)}
 
-  if(A.disp)pool.push(`⚡ <strong>Displacement:</strong> ${A.disp.dir==='bull'?'<span class="g">Bullish</span>':'<span class="r">Bearish</span>'} — ${A.disp.strength} strong candles.`);
+  // ── Displacement ──
+  if(A.disp)pool.push(`⚡ <strong>Displacement:</strong> ${A.disp.dir==='bull'?'<span class="g">Bullish</span>':'<span class="r">Bearish</span>'} — ${A.disp.strength} impulsive candles (body > 2x avg).`);
 
-  if(A.pd)pool.push(`💰 Price ${Fc(p)} in <span class="${A.pd.zone==='discount'?'g':'r'}">${A.pd.zone.toUpperCase()}</span> (${A.pd.pct}%). EQ: ${Fc(A.pd.eq)}.`);
+  // ── MMBM / MMSM ──
+  if(A.mmbm)pool.push(`📈 <strong>MMBM Active:</strong> SSL swept at <span class="g">${Fc(A.mmbm.swept)}</span> → Bullish displacement (${A.mmbm.dispStrength}x) → Targeting BSL at <span class="a">${Fc(A.mmbm.target)}</span>. Classic Market Maker Buy Model.`);
+  if(A.mmsm)pool.push(`📉 <strong>MMSM Active:</strong> BSL swept at <span class="r">${Fc(A.mmsm.swept)}</span> → Bearish displacement (${A.mmsm.dispStrength}x) → Targeting SSL at <span class="a">${Fc(A.mmsm.target)}</span>. Market Maker Sell Model.`);
 
-  if(A.eqHL.length){const e=A.eqHL[A.eqHL.length-1];pool.push(`⚖️ <strong>${e.type==='eqh'?'Equal Highs (BSL)':'Equal Lows (SSL)'}:</strong> Pool at <span class="y">${Fc(e.level)}</span>. Institutional target.`)}
+  // ── Breaker Blocks ──
+  A.breakers.filter(b=>b.touching).forEach(b=>{
+    pool.push(`🔁 <strong>Breaker Block:</strong> Failed ${b.origType} OB now acting as <span class="${b.type==='bull'?'g':'r'}">${b.type==='bull'?'bullish support':'bearish resistance'}</span> at <span class="a">${Fc(b.lo)} — ${Fc(b.hi)}</span>. <span class="a">Price touching — high prob reaction.</span>`);
+  });
 
-  if(A.bos)pool.push(`📈 <strong>BOS:</strong> ${A.bos.type==='bull'?'<span class="g">Bullish</span>':'<span class="r">Bearish</span>'} — broke ${Fc(A.bos.level)}.`);
+  // ── CHoCH ──
+  if(A.choch)pool.push(`🔄 <strong>CHoCH:</strong> ${A.choch.type==='bull'?'<span class="g">Bullish</span>':'<span class="r">Bearish</span>'} reversal detected at ${Fc(A.choch.level)}. First break of opposite structure.`);
 
+  // ── Silver Bullet ──
+  if(A.sess.sb){
+    const sbFVG=A.fvgs.filter(f=>c.length-f.idx<=4).pop();
+    pool.push(`🔫 <strong>Silver Bullet:</strong> ${A.sess.n} window ACTIVE. ${sbFVG?'FVG just formed at '+Fc(sbFVG.bot)+'–'+Fc(sbFVG.top)+' — <span class="g">SB entry candidate!</span>':'Watching for FVG to form...'}`);
+  }
+
+  // ── NDOG ──
+  if(A.ndog)pool.push(`📅 <strong>NDOG:</strong> Gap ${Fc(A.ndog.prevClose)} → ${Fc(A.ndog.todayOpen)} (${A.ndog.gap>0?'+':'-'}${Fc(Math.abs(A.ndog.gap))}). ${A.ndog.filled?'<span class="g">Gap filled.</span>':'<span class="y">Gap open — price may fill.</span>'}`);
+
+  // ── Zone ──
+  if(A.pd)pool.push(`💰 ${Fc(p)} in <span class="${A.pd.zone==='discount'?'g':'r'}">${A.pd.zone.toUpperCase()}</span> (${A.pd.pct}%). EQ: ${Fc(A.pd.eq)}.`);
+
+  // ── Equal H/L ──
+  if(A.eqHL.length){const e=A.eqHL[A.eqHL.length-1];const near=Math.abs(p-e.level)/p<0.002;
+    pool.push(`⚖️ <strong>${e.type==='eqh'?'Equal Highs (BSL)':'Equal Lows (SSL)'}:</strong> Pool at <span class="y">${Fc(e.level)}</span>. ${near?'<span class="r">Price approaching — sweep imminent!</span>':'Institutional target.'}`)}
+
+  // ── Session ──
   pool.push(`🕐 <strong>${A.sess.n}:</strong> ${A.sess.p}. ${A.sess.kz?'<span class="g">Kill Zone ACTIVE</span>':'Standard session.'}`);
 
-  // Pick 1-2 random from pool
-  const picks=pool.sort(()=>Math.random()-.5).slice(0,2);
-  picks.forEach((m,i)=>setTimeout(()=>awMsg('obs',m),i*1500));
+  // Show 2-3 from pool, prioritizing actionable items
+  const priority=pool.filter(m=>m.includes('TAP')||m.includes('MMBM')||m.includes('MMSM')||m.includes('Breaker')||m.includes('SB entry')||m.includes('CHoCH'));
+  const other=pool.filter(m=>!priority.includes(m));
+  const picks=[...priority.slice(0,2),...other.sort(()=>Math.random()-.5)].slice(0,3);
+  picks.forEach((m,i)=>setTimeout(()=>awMsg('obs',m),i*1200));
 
-  // Alert if trade signal available
-  if(A.trade&&A.conf>=70&&S.watcherCycle%3===0){
-    setTimeout(()=>awAlert(A.trade.dir==='LONG'?'buy':'sell',
-      `<strong>🔔 ${A.trade.dir} ${S.sym.sh}</strong> (${A.trade.model}, ${A.conf}%) — Entry: ${A.trade.entry} | SL: <span class="r">${A.trade.sl}</span> | TP1: <span class="g">${A.trade.tp1}</span> | TP2: <span class="b">${A.trade.tp2}</span> | R:R ${A.trade.rr}`),3500);
+  // ═══ ACTIONABLE ENTRY SIGNALS ═══
+  if(A.trade&&A.conf>=68){
+    const t=A.trade;
+    // Check for active OB/FVG tap
+    const obTapped=A.obs.length&&p>=A.obs[A.obs.length-1].lo&&p<=A.obs[A.obs.length-1].hi;
+    const fvgNear=A.fvgs.length&&Math.abs(p-A.fvgs[A.fvgs.length-1].mid)/p<0.002;
+    const brkTouch=A.breakers.some(b=>b.touching);
+
+    if(obTapped||fvgNear||brkTouch||(A.sess.kz&&A.conf>=75)||S.watcherCycle%4===0){
+      let reason='';
+      if(obTapped){const o=A.obs[A.obs.length-1];reason=`Price tapped ${o.type} OB at ${Fc(o.lo)}-${Fc(o.hi)}`}
+      if(fvgNear){const f=A.fvgs[A.fvgs.length-1];reason+=(reason?' + ':'')+f.type+' FVG '+Fc(f.bot)+'-'+Fc(f.top)}
+      if(brkTouch)reason+=(reason?' + ':'')+'Breaker confluence';
+      if(A.mmbm)reason+=(reason?' + ':'')+'MMBM active';
+      if(A.mmsm)reason+=(reason?' + ':'')+'MMSM active';
+      if(!reason)reason=t.entryReason;
+
+      setTimeout(()=>awAlert(t.dir==='LONG'?'buy':'sell',
+        `<strong>🎯 ENTRY SIGNAL: <span class="${t.dir==='LONG'?'g':'r'}">${t.dir} ${S.sym.sh}</span></strong> @ ${Fc(p)}<br>`+
+        `<span style="font-size:7px;color:var(--text2)">${reason}</span><br>`+
+        `<strong>Entry:</strong> <span class="a">${t.entry}</span> | <strong>SL:</strong> <span class="r">${t.sl}</span> (${t.slReason}) | <strong>TP1:</strong> <span class="g">${t.tp1}</span> | <strong>TP2:</strong> <span class="b">${t.tp2}</span><br>`+
+        `<strong>R:R:</strong> ${t.rr} | <strong>Model:</strong> ${t.model} | <strong>Conf:</strong> ${A.conf}%`
+      ),picks.length*1200+1500);
+    }
   }
 }
 
-function awMsg(type,html){const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const ic={sys:'🤖',info:'ℹ️',obs:'👁'}[type]||'👁';const f=document.getElementById('aw-feed');const d=document.createElement('div');d.className='aw-msg';d.innerHTML=`<div class="aw-ts">${t}</div><div class="aw-ico">${ic}</div><div class="aw-txt">${html}</div>`;f.appendChild(d);f.scrollTop=f.scrollHeight;while(f.children.length>60)f.removeChild(f.firstChild)}
-function awAlert(type,html){const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const f=document.getElementById('aw-feed');const d=document.createElement('div');d.className=`aw-alert ${type}`;d.innerHTML=`<div class="aw-ts">${t}</div><div class="aw-txt">${html}</div>`;f.appendChild(d);f.scrollTop=f.scrollHeight;while(f.children.length>60)f.removeChild(f.firstChild)}
+function awMsg(type,html){const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const ic={sys:'🤖',info:'ℹ️',obs:'👁'}[type]||'👁';const f=document.getElementById('aw-feed');const d=document.createElement('div');d.className='aw-msg';d.innerHTML=`<div class="aw-ts">${t}</div><div class="aw-ico">${ic}</div><div class="aw-txt">${html}</div>`;f.appendChild(d);f.scrollTop=f.scrollHeight;while(f.children.length>80)f.removeChild(f.firstChild)}
+function awAlert(type,html){const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const f=document.getElementById('aw-feed');const d=document.createElement('div');d.className=`aw-alert ${type}`;d.innerHTML=`<div class="aw-ts">${t}</div><div class="aw-txt">${html}</div>`;f.appendChild(d);f.scrollTop=f.scrollHeight;while(f.children.length>80)f.removeChild(f.firstChild)}
 
 // ═══════════════════════════════════════════════════════════
-// 5. CHART QUESTION BOT
+// WATCHER CHAT
 // ═══════════════════════════════════════════════════════════
 function askWatcher(){
   const inp=document.getElementById('aw-inp');const msg=inp.value.trim();if(!msg)return;inp.value='';
   awMsg('info',`<span class="b">You:</span> ${msg}`);
+  // Always re-analyze before answering
+  if(S.candles.length>=20){S.ict=freshAnalysis();S.fib=calcFib(S.candles)}
   setTimeout(()=>awMsg('obs',answerQ(msg)),300);
 }
 
 function answerQ(msg){
-  const m=msg.toLowerCase();const A=S.ict;const fi=S.fib;const p=S.livePrice;
+  const m=msg.toLowerCase();const A=S.ict;const fi=S.fib;const p=A?A.price:S.livePrice;
   if(!A||!S.candles.length)return'⚠️ No data yet — waiting for candles...';
 
   if(m.includes('fib')||m.includes('retracement')||m.includes('draw fib')){
     showFib();document.getElementById('fib-panel').style.display='block';
-    if(!fi)return'📐 Not enough data for Fibonacci.';
-    return`📐 <strong>Fibonacci</strong> (${Fc(fi.sH)} → ${Fc(fi.sL)}): Price at <span class="a">${fi.pct}% retrace</span>. ${fi.inOTE?'<span class="g">IN OTE ZONE</span>':'Outside OTE.'} Levels: 0.382=${Fc(fi.levels[2].price)}, <strong>0.5=${Fc(fi.levels[3].price)}</strong>, <strong>0.618=${Fc(fi.levels[4].price)}</strong>, 0.786=${Fc(fi.levels[6].price)}`}
+    if(!fi)return'📐 Not enough data.';
+    return`📐 <strong>Fib</strong> (${Fc(fi.sH)} → ${Fc(fi.sL)}): Price ${Fc(p)} at <span class="a">${fi.pct}%</span>. ${fi.inOTE?'<span class="g">IN OTE</span>':''} 0.5=${Fc(fi.levels[3].price)}, <strong>0.618=${Fc(fi.levels[4].price)}</strong>, 0.786=${Fc(fi.levels[6].price)}`}
 
-  if(m.includes('bias')||m.includes('trend')||m.includes('direction'))
-    return`📐 <strong>Bias: <span class="${A.bias==='Bullish'?'g':A.bias==='Bearish'?'r':'y'}">${A.bias}</span></strong> — ${A.structure}. Conf: ${A.conf}%. ${A.pd?`Price in ${A.pd.zone} (${A.pd.pct}%).`:''} ${A.disp?`${A.disp.dir} displacement active.`:'No displacement.'}`;
+  if(m.includes('bias')||m.includes('trend'))
+    return`📐 <strong>Bias: <span class="${A.bias==='Bullish'?'g':A.bias==='Bearish'?'r':'y'}">${A.bias}</span></strong> — ${A.structure}. ${A.conf}%. ${A.pd?A.pd.zone+' ('+A.pd.pct+'%)':''} ${A.disp?'Disp: '+A.disp.dir:''} ${A.mmbm?'<span class="g">MMBM active</span>':''}${A.mmsm?'<span class="r">MMSM active</span>':''}`;
 
-  if(m.includes('fvg')||m.includes('fair value')||m.includes('gap')||m.includes('imbalance')){
-    if(!A.fvgs.length)return'📊 No Fair Value Gaps in recent candles.';
-    return`📊 <strong>${A.fvgs.length} FVGs:</strong> ${A.fvgs.slice(-4).map(f=>`${f.type==='bull'?'🟢':'🔴'} ${Fc(f.bot)}-${Fc(f.top)} CE:${Fc(f.mid)}`).join(' | ')}. ${Math.abs(p-A.fvgs[A.fvgs.length-1].mid)/p<0.003?'<span class="g">Near FVG!</span>':'Monitoring.'}`}
+  if(m.includes('fvg')||m.includes('fair value')||m.includes('gap')){
+    if(!A.fvgs.length)return'📊 No FVGs in current candles.';
+    return`📊 <strong>${A.fvgs.length} FVGs:</strong> ${A.fvgs.slice(-4).map(f=>`${f.type==='bull'?'🟢':'🔴'} ${Fc(f.bot)}-${Fc(f.top)} CE:${Fc(f.mid)}`).join(' | ')}. ${A.fvgs.length&&Math.abs(p-A.fvgs[A.fvgs.length-1].mid)/p<0.003?'<span class="g">Near FVG!</span>':''}`}
 
-  if(m.includes('order block')||m.includes(' ob')||m.match(/\bob\b/))
-    return A.obs.length?`🧱 <strong>${A.obs.length} OBs:</strong> ${A.obs.slice(-3).map(o=>`${o.type==='bull'?'🟢':'🔴'} ${Fc(o.lo)}-${Fc(o.hi)} (${o.strength}x disp)`).join(' | ')}`:'🧱 No Order Blocks detected.';
+  if(m.includes('order block')||m.match(/\bob\b/))
+    return A.obs.length?`🧱 <strong>${A.obs.length} OBs:</strong> ${A.obs.slice(-3).map(o=>`${o.type==='bull'?'🟢':'🔴'} ${Fc(o.lo)}-${Fc(o.hi)} (${o.strength}x)`).join(' | ')}${A.obs.length&&p>=A.obs[A.obs.length-1].lo&&p<=A.obs[A.obs.length-1].hi?' <span class="g">PRICE AT OB!</span>':''}`:'🧱 No OBs.';
 
-  if(m.includes('sweep')||m.includes('liquidity')||m.includes('stop hunt'))
-    return A.sweeps.length?`💧 <strong>Sweeps:</strong> ${A.sweeps.map(s=>`${s.type==='bsl'?'BSL':'SSL'} at ${Fc(s.level)}, wick ${Fc(s.wick)}`).join(' | ')}`:'💧 No sweeps in recent candles.';
+  if(m.includes('breaker'))
+    return A.breakers.length?`🔁 <strong>${A.breakers.length} Breakers:</strong> ${A.breakers.slice(-2).map(b=>`${b.type==='bull'?'🟢':'🔴'} ${Fc(b.lo)}-${Fc(b.hi)}${b.touching?' ← TOUCHING':''}`).join(' | ')}`:'🔁 No breaker blocks.';
+
+  if(m.includes('sweep')||m.includes('liquidity'))
+    return A.sweeps.length?`💧 <strong>Sweeps:</strong> ${A.sweeps.map(s=>`${s.type==='bsl'?'BSL':'SSL'} at ${Fc(s.level)}, wick ${Fc(s.wick)}`).join(' | ')}`:'💧 No sweeps.';
+
+  if(m.includes('mmbm')||m.includes('mmsm')||m.includes('market maker'))
+    return A.mmbm?`📈 <strong>MMBM:</strong> SSL swept ${Fc(A.mmbm.swept)} → Bull disp (${A.mmbm.dispStrength}x) → Target BSL ${Fc(A.mmbm.target)}`:A.mmsm?`📉 <strong>MMSM:</strong> BSL swept ${Fc(A.mmsm.swept)} → Bear disp (${A.mmsm.dispStrength}x) → Target SSL ${Fc(A.mmsm.target)}`:'No MMBM/MMSM active. Need sweep + displacement in opposite direction.';
 
   if(m.includes('enter')||m.includes('trade')||m.includes('setup')||m.includes('should i')){
-    if(!A.trade)return`⏳ <strong>NO TRADE.</strong> Missing confluence:<br>${A.sweeps.length?'✅':'❌'} Sweep | ${A.disp?'✅':'❌'} Displacement | ${A.fvgs.length||A.obs.length?'✅':'❌'} FVG/OB | ${fi?.inOTE?'✅':'❌'} OTE | ${A.sess.kz?'✅':'⚠️'} Kill Zone<br><span class="y">Patience — wait for all confluences.</span>`;
-    const checks=[A.sweeps.length?'✅ Sweep':'❌ Sweep',A.disp?'✅ Displacement':'❌ Displacement',A.fvgs.length||A.obs.length?'✅ FVG/OB':'❌ FVG/OB',fi?.inOTE?'✅ OTE':'❌ OTE',A.sess.kz?'✅ Kill Zone':'⚠️ No KZ'];
-    return`<strong>${A.trade.dir==='LONG'?'🟢':'🔴'} ${A.trade.dir} ${S.sym.sh}</strong> — ${A.trade.model}<br>${checks.join(' | ')}<br>Entry: <span class="a">${A.trade.entry}</span> | SL: <span class="r">${A.trade.sl}</span> | TP1: <span class="g">${A.trade.tp1}</span> | TP2: <span class="b">${A.trade.tp2}</span> | R:R ${A.trade.rr} | Conf: <span class="${A.conf>=75?'g':'y'}">${A.conf}%</span>`}
+    if(!A.trade)return`⏳ <strong>NO TRADE.</strong> ${A.sweeps.length?'✅':'❌'} Sweep | ${A.disp?'✅':'❌'} Disp | ${A.fvgs.length||A.obs.length?'✅':'❌'} FVG/OB | ${fi?.inOTE?'✅':'❌'} OTE | ${A.sess.kz?'✅':'⚠️'} KZ — Wait for confluence.`;
+    const t=A.trade;
+    return`<strong>${t.dir==='LONG'?'🟢':'🔴'} ${t.dir} ${S.sym.sh}</strong> — ${t.model}<br>${A.sweeps.length?'✅':'❌'} Sweep | ${A.disp?'✅':'❌'} Disp | ${A.fvgs.length||A.obs.length?'✅':'❌'} FVG/OB | ${fi?.inOTE?'✅':'❌'} OTE | ${A.sess.kz?'✅':'⚠️'} KZ<br>Entry: <span class="a">${t.entry}</span> (${t.entryReason}) | SL: <span class="r">${t.sl}</span> (${t.slReason}) | TP1: <span class="g">${t.tp1}</span> | TP2: <span class="b">${t.tp2}</span> | R:R ${t.rr} | Conf: ${A.conf}%`}
 
-  if(m.includes('price'))return`💵 <strong>${S.sym.sh}:</strong> ${Fc(p)} ${S.dataLive?'📡 LIVE':'⚠️ OFFLINE'} ${A.pd?`| ${A.pd.zone} (${A.pd.pct}%)`:''} ${fi?`| Fib: ${fi.pct}%`:''}`;
+  if(m.includes('price'))return`💵 <strong>${S.sym.sh}:</strong> ${Fc(p)} ${S.dataLive?'📡':'⚠️'} ${A.pd?A.pd.zone+' ('+A.pd.pct+'%)':''} ${fi?'Fib: '+fi.pct+'%':''}`;
 
-  if(m.includes('session')||m.includes('kill zone')||m.includes('kz'))return`🕐 <strong>${A.sess.n}</strong> — ${A.sess.p}. ${A.sess.kz?'<span class="g">KZ ACTIVE — prime for setups.</span>':'No Kill Zone. Wait for London 3-5AM or NY 10AM-12PM EST.'}`;
+  if(m.includes('session')||m.includes('kill zone'))return`🕐 <strong>${A.sess.n}</strong> — ${A.sess.p}. ${A.sess.kz?'<span class="g">KZ ACTIVE</span>':'No KZ.'} ${A.sess.sb?'<span class="a">Silver Bullet window!</span>':''}`;
 
-  return`🤖 Ask: <span class="a">bias, fib, FVG, OB, sweep, trade, should I enter, price, session</span>`;
+  return`🤖 Ask: <span class="a">bias, fib, FVG, OB, breaker, sweep, MMBM, trade, should I enter, price, session</span>`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -537,7 +701,7 @@ function loadChart(){const sym=S.sym.s,tf=S.tf;document.getElementById('chart-wr
 function updPrice(){const el=document.getElementById('price-disp');if(S.livePrice)el.innerHTML=`<span style="color:${S.ict?.bias==='Bullish'?'var(--green)':S.ict?.bias==='Bearish'?'var(--red)':'var(--text1)'}">${Fc(S.livePrice)}</span>`}
 
 function rTF(){document.getElementById('tfbar').innerHTML=TFS.map(t=>`<button class="tf ${S.tf===t.v?'on':''}" onclick="chTF('${t.v}')">${t.l}</button>`).join('')}
-function rSess(){const s=getSess();document.getElementById('sessbdg').innerHTML=`${s.i} <span style="color:${s.c}">${s.n}</span>${s.kz?'<span class="kzt">KZ</span>':''}`}
+function rSess(){const s=getSess();document.getElementById('sessbdg').innerHTML=`${s.i} <span style="color:${s.c}">${s.n}</span>${s.kz?'<span class="kzt">KZ</span>':''}${s.sb?'<span class="kzt" style="background:rgba(108,92,231,.1);color:var(--accent)">SB</span>':''}`}
 function rSymList(){const q=document.getElementById('ssinp').value.toLowerCase();document.getElementById('slist').innerHTML=SYMS.filter(s=>s.n.toLowerCase().includes(q)||s.sh.toLowerCase().includes(q)).map(s=>`<div class="si hover-row ${s.s===S.sym.s?'act':''}" onclick="selSym('${s.s}')"><span>${s.n}</span><span style="font-size:8px;color:var(--accent);font-family:'DM Mono',monospace">${s.sh}</span></div>`).join('')}
 function toggleSym(){const d=document.getElementById('sdrop');d.classList.toggle('open');if(d.classList.contains('open')){rSymList();document.getElementById('ssinp').focus()}}
 function filterSym(){rSymList()}
@@ -551,17 +715,13 @@ function analyze(){
   fetchLiveData().then(ok=>{
     if(ok&&S.candles.length>=20){
       document.getElementById('scanst').textContent='Running ICT/SMC analysis...';
-      S.ict=analyzeCandles(S.candles);S.fib=calcFib(S.candles);S.analysis=S.ict;showFib();
-      // Generate notification if trade found
+      S.ict=freshAnalysis();S.fib=calcFib(S.candles);S.analysis=S.ict;showFib();
       if(S.analysis?.trade&&S.analysis.conf>=70){
         const a=S.analysis,n={id:Date.now(),time:new Date(),sym:S.sym.sh,dir:a.trade.dir,conf:a.conf,model:a.trade.model,entry:a.trade.entry,sl:a.trade.sl,tp1:a.trade.tp1,tp2:a.trade.tp2,rr:a.trade.rr,dets:a.dets.filter(d=>d.p==='critical').map(d=>d.t),read:false};
         S.notifs.unshift(n);if(S.notifs.length>30)S.notifs=S.notifs.slice(0,30);updNC();showToast(n);
       }
-      awMsg('obs',`📊 <strong>Analysis:</strong> <span class="${S.analysis.bias==='Bullish'?'g':S.analysis.bias==='Bearish'?'r':'y'}">${S.analysis.bias}</span> ${S.analysis.conf}% — ${S.analysis.dets.length} detections. ${S.analysis.trade?`Signal: ${S.analysis.trade.dir} @ ${S.analysis.trade.entry}`:'No trade.'}`);
-    }else{
-      document.getElementById('scanst').textContent='Insufficient data';
-      S.analysis=null;
-    }
+      awMsg('obs',`📊 <strong>Analysis:</strong> <span class="${S.analysis.bias==='Bullish'?'g':S.analysis.bias==='Bearish'?'r':'y'}">${S.analysis.bias}</span> ${S.analysis.conf}% — ${S.analysis.dets.length} detections. ${S.analysis.trade?'Signal: '+S.analysis.trade.dir+' @ '+S.analysis.trade.entry:'No trade.'}`);
+    }else{document.getElementById('scanst').textContent='Insufficient data';S.analysis=null}
     S.busy=false;document.getElementById('abtn').disabled=false;document.getElementById('aov').classList.remove('show');
     S.tab='analysis';rPanel();
   });
@@ -597,20 +757,21 @@ function rAnalysis(b){
       <div class="sc" style="border:1px solid ${a.trade.dir==='LONG'?'rgba(0,212,170,.1)':'rgba(255,71,87,.1)'}"><div class="sl">DIR</div><div class="sv" style="color:${a.trade.dir==='LONG'?'var(--green)':'var(--red)'}">${a.trade.dir}</div></div>
       <div class="sc" style="border:1px solid var(--border)"><div class="sl">R:R</div><div class="sv" style="color:#b8a9ff">${a.trade.rr}</div></div>
       ${[{l:'ENTRY',v:a.trade.entry,c:'var(--text1)'},{l:'STOP LOSS',v:a.trade.sl,c:'var(--red)'},{l:'TP1',v:a.trade.tp1,c:'var(--green)'},{l:'TP2',v:a.trade.tp2,c:'var(--blue)'}].map(x=>`<div class="sc"><div class="sl">${x.l}</div><div class="sv" style="color:${x.c}">${x.v}</div></div>`).join('')}
-    </div><div style="margin-top:4px;font-size:7px;color:var(--text3);padding:3px 5px;background:rgba(0,0,0,.1);border-radius:3px">🛡 Risk: ${a.trade.risk} • SL beyond sweep/OB</div></div>`
+    </div>
+    <div style="margin-top:4px;font-size:7px;color:var(--text3);padding:3px 5px;background:rgba(0,0,0,.1);border-radius:3px">📍 ${a.trade.entryReason} | 🛡 ${a.trade.slReason}</div></div>`
     :'<div style="padding:6px;text-align:center;font-size:8px;color:var(--text3);border:1px dashed var(--border);border-radius:5px;margin-bottom:6px">⏳ No trade — insufficient confluence</div>'}
     <div style="font-size:8px;font-weight:700;color:var(--text2);margin-bottom:4px">🔍 DETECTIONS (${a.dets.length})</div>
     ${a.dets.map((d,i)=>`<div class="dcard ${d.p} fade-up" style="animation-delay:${i*40}ms"><span style="font-size:10px">${d.i}</span><div style="flex:1"><div style="display:flex;justify-content:space-between"><span style="font-weight:700;color:var(--text1)">${d.t}</span><span style="font-size:5px;padding:1px 3px;border-radius:2px;font-weight:800;${d.p==='critical'?'background:rgba(255,71,87,.1);color:var(--red)':d.p==='high'?'background:rgba(108,92,231,.1);color:var(--accent)':'background:rgba(138,135,160,.08);color:var(--text2)'}">${d.p.toUpperCase()}</span></div><div style="color:var(--text2);margin-top:1px">${d.d}</div></div></div>`).join('')}`;
 }
 
 function rSignals(b){
-  if(!S.notifs.length){b.innerHTML=`<div style="text-align:center;padding:24px"><div style="font-size:28px;margin-bottom:5px">🔔</div><div style="font-size:10px;color:var(--text3)">No signals — run analysis to generate</div></div>`;return}
+  if(!S.notifs.length){b.innerHTML=`<div style="text-align:center;padding:24px"><div style="font-size:28px;margin-bottom:5px">🔔</div><div style="font-size:10px;color:var(--text3)">No signals — run analysis</div></div>`;return}
   b.innerHTML=`<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:9px;font-weight:700;color:#b8a9ff">Signals (${S.notifs.length})</span><button onclick="S.notifs.forEach(n=>n.read=true);updNC();rPanel()" style="padding:2px 5px;border-radius:2px;border:1px solid var(--border);background:transparent;color:var(--accent);font-size:6px;cursor:pointer;font-family:inherit">Read all</button></div>
-  ${S.notifs.map(n=>`<div class="sigcard ${n.read?'read':'unread'} hover-row" onclick="n=S.notifs.find(x=>x.id===${n.id});if(n)n.read=true;updNC();rPanel()"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><div style="display:flex;align-items:center;gap:3px"><span style="font-size:10px">${n.dir==='LONG'?'🟢':'🔴'}</span><span style="font-size:10px;font-weight:800;color:${n.dir==='LONG'?'var(--green)':'var(--red)'};font-family:'DM Mono',monospace">${n.dir} ${n.sym}</span></div><span style="font-size:9px;font-weight:700;color:${n.conf>=80?'var(--green)':'var(--yellow)'};font-family:'DM Mono',monospace">${n.conf}%</span></div><div style="font-size:7px;color:var(--accent);font-weight:600;margin-bottom:3px">⚡ ${n.model}</div><div class="g4">${[{l:'ENTRY',v:n.entry,c:'var(--text1)'},{l:'SL',v:n.sl,c:'var(--red)'},{l:'TP1',v:n.tp1,c:'var(--green)'},{l:'TP2',v:n.tp2,c:'var(--blue)'}].map(x=>`<div style="text-align:center;padding:2px;background:rgba(0,0,0,.15);border-radius:2px"><div style="font-size:5px;color:var(--text3)">${x.l}</div><div style="font-size:8px;font-weight:600;color:${x.c};font-family:'DM Mono',monospace">${x.v}</div></div>`).join('')}</div><div style="font-size:6px;color:var(--text3);margin-top:2px">${n.time.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} • R:R ${n.rr}</div></div>`).join('')}`;
+  ${S.notifs.map(n=>`<div class="sigcard ${n.read?'read':'unread'} hover-row" onclick="const x=S.notifs.find(z=>z.id===${n.id});if(x)x.read=true;updNC();rPanel()"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><div style="display:flex;align-items:center;gap:3px"><span style="font-size:10px">${n.dir==='LONG'?'🟢':'🔴'}</span><span style="font-size:10px;font-weight:800;color:${n.dir==='LONG'?'var(--green)':'var(--red)'};font-family:'DM Mono',monospace">${n.dir} ${n.sym}</span></div><span style="font-size:9px;font-weight:700;color:${n.conf>=80?'var(--green)':'var(--yellow)'};font-family:'DM Mono',monospace">${n.conf}%</span></div><div style="font-size:7px;color:var(--accent);font-weight:600;margin-bottom:3px">⚡ ${n.model}</div><div class="g4">${[{l:'ENTRY',v:n.entry,c:'var(--text1)'},{l:'SL',v:n.sl,c:'var(--red)'},{l:'TP1',v:n.tp1,c:'var(--green)'},{l:'TP2',v:n.tp2,c:'var(--blue)'}].map(x=>`<div style="text-align:center;padding:2px;background:rgba(0,0,0,.15);border-radius:2px"><div style="font-size:5px;color:var(--text3)">${x.l}</div><div style="font-size:8px;font-weight:600;color:${x.c};font-family:'DM Mono',monospace">${x.v}</div></div>`).join('')}</div><div style="font-size:6px;color:var(--text3);margin-top:2px">${n.time.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} • R:R ${n.rr}</div></div>`).join('')}`;
 }
 
 function rChat(b){
-  if(!S.msgs.length){b.innerHTML=`<div style="text-align:center;padding:10px 5px"><div style="font-size:20px;margin-bottom:4px">🤖</div><div style="font-size:9px;font-weight:600;color:var(--text2)">ICT/SMC Live AI</div><div style="font-size:7px;color:var(--text3);margin:2px 0 8px">Ask about live chart, trade setups, or ICT concepts</div><div style="display:flex;flex-direction:column;gap:2px">${["Give me a trade plan","Should I enter now?","What's the market bias?","Show me the FVGs","Where are the order blocks?","What's the fib level?","What is a Fair Value Gap?","Explain OTE entry"].map(p=>`<button class="cprom" onclick="sendChat('${p}')">${p}</button>`).join('')}</div></div>`;return}
+  if(!S.msgs.length){b.innerHTML=`<div style="text-align:center;padding:10px 5px"><div style="font-size:20px;margin-bottom:4px">🤖</div><div style="font-size:9px;font-weight:600;color:var(--text2)">ICT/SMC Live AI</div><div style="font-size:7px;color:var(--text3);margin:2px 0 8px">Ask about live chart, trade setups, or ICT concepts</div><div style="display:flex;flex-direction:column;gap:2px">${["Give me a trade plan","Should I enter now?","What's the market bias?","Show me the FVGs","Where are the order blocks?","What's the fib level?","Explain OTE entry"].map(p=>`<button class="cprom" onclick="sendChat('${p}')">${p}</button>`).join('')}</div></div>`;return}
   b.innerHTML=S.msgs.map(m=>`<div class="cmsg"><div style="display:flex;align-items:center;gap:3px;margin-bottom:2px"><span style="font-size:7px">${m.r==='user'?'👤':'🤖'}</span><span style="font-size:6px;font-weight:600;color:${m.r==='user'?'var(--blue)':'var(--accent)'}">${m.r==='user'?'You':'SMC AI'}</span></div><div class="cbub ${m.r==='user'?'usr':'ai'}">${fmtC(m.c)}</div></div>`).join('')+(S.typing?'<div style="padding:6px 8px;font-size:8px;color:var(--accent)"><span style="animation:pulse 1s infinite">⏳ Analyzing live data...</span></div>':'');
   b.scrollTop=b.scrollHeight;
 }
@@ -620,163 +781,108 @@ async function sendChat(txt){
   const msg=txt||document.getElementById('cinp').value.trim();if(!msg)return;document.getElementById('cinp').value='';
   S.msgs.push({r:'user',c:msg});S.typing=true;rPanel();
   const m=msg.toLowerCase();
-  const isTradePlan=m.includes('trade plan')||m.includes('trade setup')||m.includes('give me')||m.includes('the trade')||m.includes('the setup')||m.includes('my trade')||m.includes('plan for')||m.includes('what trade');
-  const isEntry=m.includes('should i enter')||m.includes('enter now')||m.includes('can i enter')||m.includes('is it safe')||m.includes('go long')||m.includes('go short')||m.includes('take the trade');
-  const isBias=m.includes('bias')||m.includes('direction')||m.includes('trend')||m.includes('bullish or bearish')||m.includes('which way');
-  const isFVG=m.includes('fvg')||m.includes('fair value gap')||m.includes('imbalance')||m.includes('show me the gap');
-  const isOB=m.includes('order block')||m.match(/\bob\b/)||m.includes('institutional zone');
-  const isFib=m.includes('fib')||m.includes('retracement')||m.includes('fibonacci')||m.includes('ote zone')||m.includes('ote level');
-  const isSweep=m.includes('sweep')||m.includes('liquidity')||m.includes('stop hunt')||m.includes('bsl')||m.includes('ssl');
-  const isSession=m.includes('session')||m.includes('kill zone')||m.includes(' kz')||m.includes('timing')||m.includes('when to trade');
-  const isPrice=m.includes('current price')||m.includes('where is price')||m.includes('price now');
-  const isLive=isTradePlan||isEntry||isBias||isFVG||isOB||isFib||isSweep||isSession||isPrice;
-  if(isLive&&S.candles.length<20){await fetchLiveData();if(S.candles.length>=20){S.ict=analyzeCandles(S.candles);S.fib=calcFib(S.candles);showFib()}}
-  if(isTradePlan||isEntry){await fetchLiveData();if(S.candles.length>=20){S.ict=analyzeCandles(S.candles);S.fib=calcFib(S.candles);S.analysis=S.ict;showFib()}}
+  const isTrade=m.includes('trade plan')||m.includes('trade setup')||m.includes('give me')||m.includes('the trade')||m.includes('the setup')||m.includes('what trade');
+  const isEntry=m.includes('should i enter')||m.includes('enter now')||m.includes('can i enter')||m.includes('go long')||m.includes('go short')||m.includes('take the trade');
+  const isLive=isTrade||isEntry||m.includes('bias')||m.includes('fvg')||m.includes('order block')||m.includes('fib')||m.includes('sweep')||m.includes('session')||m.includes('price')||m.includes('breaker')||m.includes('mmbm');
+  if(isLive){if(S.candles.length<20)await fetchLiveData();if(S.candles.length>=20){S.ict=freshAnalysis();S.fib=calcFib(S.candles);S.analysis=S.ict;showFib()}}
+  if(isTrade||isEntry){await fetchLiveData();if(S.candles.length>=20){S.ict=freshAnalysis();S.fib=calcFib(S.candles);S.analysis=S.ict;showFib()}}
   let resp;
-  if(isTradePlan)resp=buildTradePlan();else if(isEntry)resp=buildEntryCheck();else if(isBias)resp=buildBiasReport();else if(isFVG)resp=buildFVGReport();else if(isOB)resp=buildOBReport();else if(isFib)resp=buildFibReport();else if(isSweep)resp=buildSweepReport();else if(isSession)resp=buildSessionReport();else if(isPrice)resp=buildPriceReport();else resp=buildKBResponse(m);
-  setTimeout(()=>{S.typing=false;S.msgs.push({r:'ai',c:resp});rPanel()},isTradePlan||isEntry?800:350);
+  if(isTrade)resp=buildTradePlan();else if(isEntry)resp=buildEntryCheck();else resp=buildChatReply(m);
+  setTimeout(()=>{S.typing=false;S.msgs.push({r:'ai',c:resp});rPanel()},isTrade||isEntry?800:350);
 }
+
 function buildTradePlan(){
-  const A=S.ict,fi=S.fib,p=S.livePrice,sess=getSess();
-  if(!A||!S.candles.length)return'⚠️ No live data available. Click **Analyze** first or wait for data to load.';
-  let plan='';
-  plan+=`**═══ ICT/SMC TRADE PLAN ═══**\n**${S.sym.sh}** | ${TFS.find(t=>t.v===S.tf)?.l} | ${S.dataLive?'📡 LIVE DATA':'⚠️ OFFLINE'}\nPrice: **${Fc(p)}** | ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} EST\n\n`;
-  plan+=`**📐 MARKET STRUCTURE**\nBias: ${A.bias==='Bullish'?'__'+A.bias+'__':A.bias==='Bearish'?'~~'+A.bias+'~~':'⚪ '+A.bias} (${A.conf}% confidence)\n${A.structure}\n`;
-  if(A.bos)plan+=`BOS: ${A.bos.type==='bull'?'Bullish':'Bearish'} break at ${Fc(A.bos.level)}\n`;
+  const A=S.ict,fi=S.fib,p=A?.price||S.livePrice,sess=getSess();
+  if(!A)return'⚠️ No data. Click **Analyze** or wait for live data.';
+  let plan='**═══ ICT/SMC TRADE PLAN ═══**\n**'+S.sym.sh+'** | '+TFS.find(t=>t.v===S.tf)?.l+' | '+(S.dataLive?'📡 LIVE':'⚠️ OFFLINE')+'\nPrice: **'+Fc(p)+'**\n\n';
+  plan+='**📐 STRUCTURE:** '+(A.bias==='Bullish'?'__'+A.bias+'__':A.bias==='Bearish'?'~~'+A.bias+'~~':A.bias)+' ('+A.conf+'%)\n'+A.structure+'\n';
+  if(A.bos)plan+='BOS: '+A.bos.type+' at '+Fc(A.bos.level)+'\n';
+  if(A.choch)plan+='CHoCH: '+A.choch.type+' reversal at '+Fc(A.choch.level)+'\n';
+  plan+='\n**🔍 PATTERNS ('+A.dets.length+')**\n';
+  if(A.fvgs.length)plan+='📊 FVGs: '+A.fvgs.slice(-3).map(f=>(f.type==='bull'?'🟢':'🔴')+' '+Fc(f.bot)+'–'+Fc(f.top)).join(' | ')+'\n';
+  if(A.obs.length)plan+='🧱 OBs: '+A.obs.slice(-2).map(o=>(o.type==='bull'?'🟢':'🔴')+' '+Fc(o.lo)+'–'+Fc(o.hi)+' ('+o.strength+'x)').join(' | ')+'\n';
+  if(A.breakers.length)plan+='🔁 Breakers: '+A.breakers.slice(-2).map(b=>Fc(b.lo)+'–'+Fc(b.hi)+(b.touching?' ← TOUCHING':'')).join(' | ')+'\n';
+  if(A.sweeps.length)plan+='💧 Sweeps: '+A.sweeps.map(s=>s.type+' at '+Fc(s.level)).join(' | ')+'\n';
+  if(A.disp)plan+='⚡ Displacement: '+A.disp.dir+' ('+A.disp.strength+'x)\n';
+  if(A.mmbm)plan+='📈 **MMBM:** SSL swept '+Fc(A.mmbm.swept)+' → Target '+Fc(A.mmbm.target)+'\n';
+  if(A.mmsm)plan+='📉 **MMSM:** BSL swept '+Fc(A.mmsm.swept)+' → Target '+Fc(A.mmsm.target)+'\n';
   plan+='\n';
-  plan+=`**🔍 ICT PATTERNS (${A.dets.length})**\n`;
-  if(A.fvgs.length){const r=A.fvgs.slice(-3);plan+=`📊 FVGs (${A.fvgs.length}): ${r.map(f=>`${f.type==='bull'?'🟢':'🔴'} ${Fc(f.bot)}–${Fc(f.top)} [CE: ${Fc(f.mid)}]`).join(' | ')}\n`}else plan+='📊 FVGs: None\n';
-  if(A.obs.length){const r=A.obs.slice(-2);plan+=`🧱 OBs (${A.obs.length}): ${r.map(o=>`${o.type==='bull'?'🟢':'🔴'} ${Fc(o.lo)}–${Fc(o.hi)} (${o.strength}x disp)`).join(' | ')}\n`}else plan+='🧱 OBs: None\n';
-  if(A.sweeps.length)plan+=`💧 Sweeps: ${A.sweeps.map(s=>`${s.type==='bsl'?'BSL':'SSL'} at ${Fc(s.level)} → ${Fc(s.wick)}`).join(' | ')}\n`;
-  if(A.disp)plan+=`⚡ Displacement: ${A.disp.dir==='bull'?'Bullish':'Bearish'} (${A.disp.strength} candles)\n`;
-  if(A.eqHL.length)plan+=`⚖️ Liq Pools: ${A.eqHL.slice(-2).map(e=>`${e.type==='eqh'?'EQH':'EQL'} at ${Fc(e.level)}`).join(' | ')}\n`;
-  plan+='\n';
-  if(fi){plan+=`**📐 FIBONACCI**\nSwing: ${Fc(fi.sH)} → ${Fc(fi.sL)} | ${fi.pct}% retrace${fi.inOTE?' — ^^IN OTE ZONE^^':''}\n0.5=${Fc(fi.levels[3].price)} | **0.618=${Fc(fi.levels[4].price)}** | 0.786=${Fc(fi.levels[6].price)}\n\n`}
-  if(A.pd){plan+=`**💰 ZONE:** ${A.pd.zone==='discount'?'__DISCOUNT__':'~~PREMIUM~~'} (${A.pd.pct}%) | EQ: ${Fc(A.pd.eq)}\n\n`}
-  plan+=`**🕐 SESSION:** ${sess.n} — ${sess.p}${sess.kz?' | ^^KZ ACTIVE^^':''}\n\n`;
+  if(fi)plan+='**📐 FIB:** '+Fc(fi.sH)+' → '+Fc(fi.sL)+' | '+fi.pct+'%'+(fi.inOTE?' ^^IN OTE^^':'')+'\n';
+  if(A.pd)plan+='**💰 ZONE:** '+(A.pd.zone==='discount'?'__DISCOUNT__':'~~PREMIUM~~')+' ('+A.pd.pct+'%) EQ: '+Fc(A.pd.eq)+'\n';
+  plan+='**🕐** '+sess.n+' — '+sess.p+(sess.kz?' ^^KZ ACTIVE^^':'')+(sess.sb?' ^^Silver Bullet^^':'')+'\n\n';
   if(A.trade){
-    plan+=`**═══ TRADE SETUP ═══**\n`;
-    plan+=`Direction: ${A.trade.dir==='LONG'?'__🟢 LONG__':'~~🔴 SHORT~~'} | Model: **${A.trade.model}**\n\n`;
-    plan+=`**Entry:** ^^${A.trade.entry}^^`;
-    if(A.fvgs.length){const f=A.fvgs[A.fvgs.length-1];plan+=` (${f.type} FVG mid at ${Fc(f.mid)})`}
-    else if(A.obs.length){const o=A.obs[A.obs.length-1];plan+=` (${o.type} OB ${Fc(o.lo)}–${Fc(o.hi)})`}
-    plan+='\n';
-    plan+=`**Stop Loss:** ~~${A.trade.sl}~~`;
-    if(A.sweeps.length)plan+=` (beyond ${A.sweeps[A.sweeps.length-1].type} sweep wick ${Fc(A.sweeps[A.sweeps.length-1].wick)})`;
-    plan+='\n';
-    plan+=`**TP1:** __${A.trade.tp1}__ (2R) | **TP2:** __${A.trade.tp2}__ (${A.trade.rr})\n`;
-    plan+=`**R:R:** ${A.trade.rr} | **Risk:** ${A.trade.risk}\n\n`;
-    plan+=`**📋 CONFLUENCE**\n`;
-    plan+=`${A.sweeps.length?'✅':'❌'} Liquidity Sweep${A.sweeps.length?' ('+A.sweeps[A.sweeps.length-1].type+' at '+Fc(A.sweeps[A.sweeps.length-1].level)+')':''}\n`;
-    plan+=`${A.disp?'✅':'❌'} Displacement${A.disp?' ('+A.disp.dir+', '+A.disp.strength+'x)':''}\n`;
-    plan+=`${A.fvgs.length?'✅':'❌'} FVG${A.fvgs.length?' ('+A.fvgs.length+' found)':''}\n`;
-    plan+=`${A.obs.length?'✅':'❌'} Order Block${A.obs.length?' ('+A.obs.length+' found)':''}\n`;
-    plan+=`${fi?.inOTE?'✅':'❌'} OTE Zone${fi?' ('+fi.pct+'%)':''}\n`;
-    plan+=`${sess.kz?'✅':'⚠️'} Kill Zone (${sess.n})\n`;
-    plan+=`${A.bias!=='Neutral'?'✅':'❌'} Clear Bias (${A.bias})\n\n`;
-    const checks=[A.sweeps.length,A.disp,A.fvgs.length||A.obs.length,fi?.inOTE,sess.kz,A.bias!=='Neutral'].filter(Boolean).length;
-    plan+=`**Score: ${checks}/6** — ${checks>=5?'^^STRONG — High probability^^':checks>=4?'^^DECENT — Acceptable^^':checks>=3?'Developing — wait':'⚠️ WEAK — no trade'}\n\n`;
-    plan+=`**💡 WHY:** `;
-    if(A.sweeps.length&&A.disp)plan+=`Institutions swept ${A.sweeps[A.sweeps.length-1].type} at ${Fc(A.sweeps[A.sweeps.length-1].level)} then displaced ${A.disp.dir} — classic manipulation→expansion. `;
-    if(A.fvgs.length)plan+=`FVG at ${Fc(A.fvgs[A.fvgs.length-1].bot)}–${Fc(A.fvgs[A.fvgs.length-1].top)} created during displacement — expect price to fill at CE. `;
-    if(fi?.inOTE)plan+=`Price in OTE (${fi.pct}%) — optimal entry. `;
-    if(A.pd)plan+=`${A.pd.zone} zone (${A.pd.pct}%) ${A.pd.zone==='discount'?'favors longs':'favors shorts'}. `;
-    if(sess.kz)plan+=`${sess.n} active — peak institutional volume.`;
+    const t=A.trade;
+    plan+='**═══ TRADE ═══**\n'+(t.dir==='LONG'?'__🟢 LONG__':'~~🔴 SHORT~~')+' | **'+t.model+'**\n\n';
+    plan+='**Entry:** ^^'+t.entry+'^^ ('+t.entryReason+')\n';
+    plan+='**SL:** ~~'+t.sl+'~~ ('+t.slReason+')\n';
+    plan+='**TP1:** __'+t.tp1+'__ (2R) | **TP2:** __'+t.tp2+'__ ('+t.rr+')\n';
+    plan+='**Risk:** '+t.risk+'\n\n';
+    plan+='**📋 CONFLUENCE**\n';
+    plan+=(A.sweeps.length?'✅':'❌')+' Sweep'+(A.sweeps.length?' ('+A.sweeps[A.sweeps.length-1].type+' at '+Fc(A.sweeps[A.sweeps.length-1].level)+')':'')+'\n';
+    plan+=(A.disp?'✅':'❌')+' Displacement'+(A.disp?' ('+A.disp.dir+', '+A.disp.strength+'x)':'')+'\n';
+    plan+=(A.fvgs.length?'✅':'❌')+' FVG'+(A.fvgs.length?' ('+A.fvgs.length+')':'')+'\n';
+    plan+=(A.obs.length?'✅':'❌')+' OB'+(A.obs.length?' ('+A.obs.length+')':'')+'\n';
+    plan+=(fi?.inOTE?'✅':'❌')+' OTE'+(fi?' ('+fi.pct+'%)':'')+'\n';
+    plan+=(sess.kz?'✅':'⚠️')+' KZ ('+sess.n+')\n\n';
+    plan+='**💡 WHY:** ';
+    if(A.mmbm)plan+='MMBM in play — SSL swept, bullish displacement, targeting BSL. ';
+    else if(A.mmsm)plan+='MMSM in play — BSL swept, bearish displacement, targeting SSL. ';
+    else if(A.sweeps.length&&A.disp)plan+='Sweep at '+Fc(A.sweeps[A.sweeps.length-1].level)+' → '+A.disp.dir+' displacement — manipulation→expansion. ';
+    if(A.fvgs.length)plan+='FVG at '+Fc(A.fvgs[A.fvgs.length-1].bot)+'–'+Fc(A.fvgs[A.fvgs.length-1].top)+' for entry. ';
+    if(fi?.inOTE)plan+='In OTE ('+fi.pct+'%). ';
   }else{
-    plan+=`**═══ NO TRADE ═══**\nInsufficient confluence:\n`;
-    if(!A.sweeps.length)plan+='❌ No liquidity sweep\n';
-    if(!A.disp)plan+='❌ No displacement\n';
+    plan+='**═══ NO TRADE ═══**\nMissing:\n';
+    if(!A.sweeps.length)plan+='❌ No sweep\n';if(!A.disp)plan+='❌ No displacement\n';
     if(!A.fvgs.length&&!A.obs.length)plan+='❌ No FVG/OB\n';
-    if(fi&&!fi.inOTE)plan+=`❌ Not in OTE (${fi.pct}%)\n`;
-    if(!sess.kz)plan+=`⚠️ No Kill Zone\n`;
-    plan+='\n**Wait for:** Sweep → Displacement → FVG → OTE retrace → KZ timing';
+    plan+='\n**Wait for:** Sweep → Displacement → FVG → OTE → KZ';
   }
   return plan;
 }
+
 function buildEntryCheck(){
-  const A=S.ict,fi=S.fib,p=S.livePrice,sess=getSess();
-  if(!A)return'⚠️ No analysis data. Run **Analyze** first.';
-  const hasSweep=A.sweeps.length>0,hasDisp=A.disp!==null,hasFVG=A.fvgs.length>0,hasOB=A.obs.length>0,inOTE=fi?.inOTE||false,kz=sess.kz,clearBias=A.bias!=='Neutral';
-  const score=[hasSweep,hasDisp,hasFVG||hasOB,inOTE,kz,clearBias].filter(Boolean).length;
-  let r=`**Enter ${S.sym.sh}?** Price: ${Fc(p)} | ${A.bias} ${A.conf}%\n\n`;
-  r+=`${hasSweep?'✅':'❌'} Sweep${hasSweep?` — ${A.sweeps[A.sweeps.length-1].type} at ${Fc(A.sweeps[A.sweeps.length-1].level)}`:''}\n`;
-  r+=`${hasDisp?'✅':'❌'} Displacement${hasDisp?` — ${A.disp.dir}, ${A.disp.strength}x`:''}\n`;
-  r+=`${hasFVG?'✅':'❌'} FVG${hasFVG?` — ${Fc(A.fvgs[A.fvgs.length-1].bot)}–${Fc(A.fvgs[A.fvgs.length-1].top)}`:''}\n`;
-  r+=`${hasOB?'✅':'❌'} OB${hasOB?` — ${Fc(A.obs[A.obs.length-1].lo)}–${Fc(A.obs[A.obs.length-1].hi)}`:''}\n`;
-  r+=`${inOTE?'✅':'❌'} OTE${fi?` — ${fi.pct}%`:''}\n`;
-  r+=`${kz?'✅':'⚠️'} Kill Zone (${sess.n})\n`;
-  r+=`${clearBias?'✅':'❌'} Bias (${A.bias})\n\n`;
-  r+=`**Score: ${score}/6** — `;
-  if(score>=5)r+=`**^^YES — ENTER^^** ${A.trade?`${A.trade.dir} @ ${A.trade.entry}, SL ~~${A.trade.sl}~~, TP __${A.trade.tp1}__ / __${A.trade.tp2}__ (${A.trade.rr})`:''} Risk 1-2%.`;
-  else if(score>=4)r+=`**^^CAUTIOUS YES^^** Decent setup, missing ${6-score}. ${A.trade?`${A.trade.dir} @ ${A.trade.entry}, R:R ${A.trade.rr}.`:''} Reduce to 0.5-1%.`;
-  else if(score>=3)r+=`**⚠️ WAIT** — Developing. Need more confluence.`;
-  else r+=`**~~NO~~** — Only ${score}/6. Do NOT enter.`;
+  const A=S.ict,fi=S.fib,p=A?.price||S.livePrice,sess=getSess();
+  if(!A)return'⚠️ No data.';
+  const checks=[A.sweeps.length>0,A.disp!==null,A.fvgs.length>0||A.obs.length>0,fi?.inOTE,sess.kz,A.bias!=='Neutral'];
+  const score=checks.filter(Boolean).length;
+  let r='**Enter '+S.sym.sh+'?** '+Fc(p)+' | '+A.bias+' '+A.conf+'%\n\n';
+  r+=(checks[0]?'✅':'❌')+' Sweep\n'+(checks[1]?'✅':'❌')+' Displacement\n'+(checks[2]?'✅':'❌')+' FVG/OB\n'+(checks[3]?'✅':'❌')+' OTE\n'+(checks[4]?'✅':'⚠️')+' Kill Zone\n'+(checks[5]?'✅':'❌')+' Bias\n\n';
+  r+='**Score: '+score+'/6** — ';
+  if(score>=5&&A.trade)r+='**^^YES^^** '+A.trade.dir+' @ '+A.trade.entry+', SL ~~'+A.trade.sl+'~~, TP __'+A.trade.tp1+'__/__'+A.trade.tp2+'__ ('+A.trade.rr+')';
+  else if(score>=4)r+='**^^CAUTIOUS YES^^** '+(A.trade?A.trade.dir+' @ '+A.trade.entry:'');
+  else if(score>=3)r+='**⚠️ WAIT** — developing';
+  else r+='**~~NO~~** — '+score+'/6 only';
   return r;
 }
-function buildBiasReport(){
-  const A=S.ict,fi=S.fib,p=S.livePrice;if(!A)return'⚠️ No data.';
-  let r=`**📐 BIAS: ${A.bias==='Bullish'?'__'+A.bias+'__':A.bias==='Bearish'?'~~'+A.bias+'~~':A.bias}** (${A.conf}%)\n${A.structure}\nPrice: ${Fc(p)}\n\n`;
-  if(A.bos)r+=`📈 BOS: ${A.bos.type} at ${Fc(A.bos.level)}\n`;
-  if(A.disp)r+=`⚡ Displacement: ${A.disp.dir} (${A.disp.strength}x)\n`;
-  if(A.pd)r+=`💰 ${A.pd.zone} (${A.pd.pct}%)\n`;
-  if(fi)r+=`📐 Fib: ${fi.pct}%${fi.inOTE?' ^^OTE^^':''}\n`;
-  r+=`🕐 ${A.sess.n}${A.sess.kz?' ^^KZ^^':''}\n`;
-  r+=`\n${A.bias==='Bullish'?'Look for longs at OBs/FVGs in discount.':A.bias==='Bearish'?'Look for shorts at OBs/FVGs in premium.':'Wait for structure.'}`;
-  return r;
-}
-function buildFVGReport(){
-  const A=S.ict,p=S.livePrice;if(!A)return'⚠️ No data.';
-  if(!A.fvgs.length)return`📊 **No FVGs** in ${S.candles.length} candles.`;
-  let r=`📊 **${A.fvgs.length} FVGs on ${S.sym.sh}**\n\n`;
-  A.fvgs.slice(-5).forEach((f,i)=>{const near=Math.abs(p-f.mid)/p<0.003;r+=`${f.type==='bull'?'🟢':'🔴'} #${i+1}: **${Fc(f.bot)} — ${Fc(f.top)}** CE: ^^${Fc(f.mid)}^^${near?' ← __NEAR__':''}\n`});
-  return r;
-}
-function buildOBReport(){
-  const A=S.ict,p=S.livePrice;if(!A)return'⚠️ No data.';
-  if(!A.obs.length)return'🧱 **No Order Blocks.** Need 3+ displacement after opposing candle.';
-  let r=`🧱 **${A.obs.length} OBs on ${S.sym.sh}**\n\n`;
-  A.obs.slice(-4).forEach((o,i)=>{const near=Math.abs(p-o.mid)/p<0.005;r+=`${o.type==='bull'?'🟢':'🔴'} #${i+1}: **${Fc(o.lo)} — ${Fc(o.hi)}** (${o.strength}x disp)${near?' ← __AT OB__':''}\n`});
-  return r;
-}
-function buildFibReport(){
-  const fi=S.fib;if(!fi)return'📐 Not enough data for Fibonacci.';
-  showFib();document.getElementById('fib-panel').style.display='block';
-  let r=`**📐 FIBONACCI**\nSwing: ${Fc(fi.sH)} → ${Fc(fi.sL)} | Price: ${Fc(fi.price)} (${fi.pct}%)\n${fi.inOTE?'^^IN OTE ZONE^^':''}\n\n`;
-  fi.levels.forEach(lv=>{const isOTE=lv.r>=0.5&&lv.r<=0.618;const near=Math.abs(fi.price-lv.price)/fi.range<0.025;r+=`${isOTE?'★':near?'→':' '} **${lv.label}** = ^^${Fc(lv.price)}^^${isOTE?' OTE':''}${near?' ← HERE':''}\n`});
-  r+=`\n**OTE:** ${Fc(fi.levels[3].price)} — ${Fc(fi.levels[4].price)} | Golden: ${Fc(fi.levels[4].price)}`;
-  return r;
-}
-function buildSweepReport(){
-  const A=S.ict;if(!A)return'⚠️ No data.';
-  let r=`💧 **LIQUIDITY — ${S.sym.sh}**\n\n`;
-  if(A.sweeps.length){r+=`**Sweeps (${A.sweeps.length}):**\n`;A.sweeps.forEach(s=>r+=`${s.type==='bsl'?'🔴 BSL':'🟢 SSL'} at **${Fc(s.level)}** → wick ~~${Fc(s.wick)}~~\n`);r+='\n'}else r+='No sweeps.\n\n';
-  if(A.eqHL.length){r+=`**Pools:**\n`;A.eqHL.slice(-3).forEach(e=>r+=`⚖️ ${e.type==='eqh'?'EQH (BSL)':'EQL (SSL)'} at ^^${Fc(e.level)}^^\n`)}
-  return r;
-}
-function buildSessionReport(){
-  const sess=getSess();
-  return`**🕐 ${sess.n}** — ${sess.p}${sess.kz?' ^^KZ ACTIVE^^':''}\n\n🌏 Asian: 8PM–3AM\n🇬🇧 **London KZ: 3–5AM**\n🇬🇧 London: 5–10AM\n🇺🇸 **NY KZ: 10AM–12PM**\n🍽 Lunch: 12–1PM\n🔫 **Silver Bullet: 1–2PM**\n🇺🇸 NY PM: 2–5PM\n\n${sess.kz?'^^KZ active — prime for setups^^':'Wait for London/NY KZ for best entries.'}`;
-}
-function buildPriceReport(){
-  const A=S.ict,p=S.livePrice;
-  let r=`💵 **${S.sym.sh}: ${Fc(p)}** ${S.dataLive?'📡':'⚠️'}\n`;
-  if(A?.pd)r+=`${A.pd.zone==='discount'?'__DISCOUNT__':'~~PREMIUM~~'} (${A.pd.pct}%) EQ: ${Fc(A.pd.eq)}\n`;
-  if(S.fib)r+=`Fib: ${S.fib.pct}%${S.fib.inOTE?' ^^OTE^^':''}\n`;
-  if(A)r+=`Bias: ${A.bias} (${A.conf}%)`;
-  return r;
-}
-function buildKBResponse(m){
+
+function buildChatReply(m){
+  // Re-analyze is already done in sendChat
+  const A=S.ict,fi=S.fib,p=A?A.price:S.livePrice;
+  if(m.includes('bias')||m.includes('trend'))return A?'📐 **'+A.bias+'** ('+A.conf+'%) — '+A.structure+(A.mmbm?' __MMBM active__':'')+(A.mmsm?' ~~MMSM active~~':''):'⚠️ No data.';
+  if(m.includes('fvg')||m.includes('fair value'))return A?.fvgs.length?'📊 **'+A.fvgs.length+' FVGs:** '+A.fvgs.slice(-4).map(f=>(f.type==='bull'?'🟢':'🔴')+' '+Fc(f.bot)+'–'+Fc(f.top)+' CE:'+Fc(f.mid)).join(' | '):'📊 No FVGs.';
+  if(m.includes('order block')||m.match(/\bob\b/))return A?.obs.length?'🧱 **'+A.obs.length+' OBs:** '+A.obs.slice(-3).map(o=>(o.type==='bull'?'🟢':'🔴')+' '+Fc(o.lo)+'–'+Fc(o.hi)).join(' | '):'🧱 No OBs.';
+  if(m.includes('breaker'))return A?.breakers.length?'🔁 **Breakers:** '+A.breakers.slice(-2).map(b=>Fc(b.lo)+'–'+Fc(b.hi)+(b.touching?' ← TOUCHING':'')).join(' | '):'🔁 No breakers.';
+  if(m.includes('sweep')||m.includes('liquidity'))return A?.sweeps.length?'💧 '+A.sweeps.map(s=>s.type+' at '+Fc(s.level)+' → '+Fc(s.wick)).join(' | '):'💧 No sweeps.';
+  if(m.includes('mmbm')||m.includes('mmsm'))return A?.mmbm?'📈 **MMBM:** SSL swept '+Fc(A.mmbm.swept)+' → Target '+Fc(A.mmbm.target):A?.mmsm?'📉 **MMSM:** BSL swept '+Fc(A.mmsm.swept)+' → Target '+Fc(A.mmsm.target):'No MMBM/MMSM.';
+  if(m.includes('fib')||m.includes('retracement')){showFib();return fi?'📐 **Fib** '+Fc(fi.sH)+'→'+Fc(fi.sL)+' | '+fi.pct+'%'+(fi.inOTE?' ^^OTE^^':''):'📐 No fib data.'}
+  if(m.includes('session')||m.includes('kz')){const s=getSess();return'🕐 **'+s.n+'** — '+s.p+(s.kz?' ^^KZ^^':'')+(s.sb?' ^^SB^^':'')};
+  if(m.includes('price'))return'💵 **'+S.sym.sh+':** '+Fc(p)+' '+(S.dataLive?'📡':'⚠️');
+  // KB fallback
   const all={...CONCEPTS,...TECHNIQUES};let resp='';
   for(const[name,content]of Object.entries(all)){
-    if(name.toLowerCase().split(/[\s/()]+/).filter(w=>w.length>2).some(kw=>m.includes(kw))){resp+=`**${name}**\n${content}\n\n`;if(resp.length>400)break}
+    if(name.toLowerCase().split(/[\s/()]+/).filter(w=>w.length>2).some(kw=>m.includes(kw))){resp+='**'+name+'**\n'+content+'\n\n';if(resp.length>400)break}
   }
-  if(resp)return resp.trim()+'\n\n💡 Try: **trade plan, should I enter, bias, FVG, OB, fib, sweep, session**';
-  return'🤖 **I can answer:**\n• "Give me a trade plan" — full ICT setup\n• "Should I enter?" — confluence YES/NO\n• "Bias?" — market structure\n• "FVGs?" — Fair Value Gaps\n• "OBs?" — Order Blocks\n• "Fib?" — Fibonacci levels\n• "Sweeps?" — liquidity analysis\n• "Session?" — Kill Zone timing\n• Or ask about any ICT concept!';
+  if(resp)return resp.trim()+'\n\n💡 Try: **trade plan, should I enter, bias, FVG, OB, breaker, MMBM, fib, sweep**';
+  return'🤖 Ask: **trade plan, should I enter, bias, FVG, OB, breaker, MMBM, fib, sweep, session, price** — or any ICT concept!';
 }
 
+function rKB(b){
+  b.innerHTML=`<div style="font-size:9px;font-weight:700;color:#b8a9ff;margin-bottom:5px">📘 Knowledge Base</div>
+    <div style="margin-bottom:6px"><div style="font-size:7px;font-weight:700;color:var(--accent);margin-bottom:2px">CONCEPTS (${Object.keys(CONCEPTS).length})</div>${Object.keys(CONCEPTS).map(c=>`<div class="kbi hover-row" onclick="S.tab='chat';sendChat('Explain ${c.replace(/'/g,"\\'")}')"><span style="font-size:5px">📘</span>${c}</div>`).join('')}</div>
+    <div><div style="font-size:7px;font-weight:700;color:var(--accent2);margin-bottom:2px">TECHNIQUES (${Object.keys(TECHNIQUES).length})</div>${Object.keys(TECHNIQUES).map(t=>`<div class="kbi hover-row" onclick="S.tab='chat';sendChat('Explain ${t.replace(/'/g,"\\'")}')"><span style="font-size:5px">⚡</span>${t}</div>`).join('')}</div>`;
+}
 
 // ═══════════════════════════════════════════════════════════
-// STATUS BAR
+// STATUS
 // ═══════════════════════════════════════════════════════════
 function updStatus(){
   const est=new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'});
