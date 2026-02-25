@@ -172,10 +172,13 @@ const SYMS=[
 const TFS=[{v:"1",l:"1m"},{v:"5",l:"5m"},{v:"15",l:"15m"},{v:"30",l:"30m"},{v:"60",l:"1H"},{v:"240",l:"4H"},{v:"D",l:"1D"},{v:"W",l:"1W"}];
 const PREF={'OANDA:XAUUSD':3320,'OANDA:EURUSD':1.085,'OANDA:GBPUSD':1.265,'FX:USDJPY':149.5,'OANDA:GBPJPY':189,'BITSTAMP:BTCUSD':107000,'BITSTAMP:ETHUSD':2600,'NASDAQ:AAPL':225,'NASDAQ:TSLA':340,'SP:SPX':5700,'OANDA:NAS100USD':20500,'TVC:DXY':104,'OANDA:USOIL':62,'OANDA:XAGUSD':33};
 
-let $={sym:SYMS[0],tf:"15",analysis:null,busy:false,auto:false,autoI:null,notifs:[],tab:"analysis",msgs:[],typing:false,wI:null,wCyc:0,candles:[],dataLive:false,dataI:null,fib:null,ict:null,prevDayClose:0};
+let $={sym:SYMS[0],tf:"15",analysis:null,busy:false,auto:false,autoI:null,notifs:[],tab:"analysis",msgs:[],typing:false,wI:null,wCyc:0,candles:[],dataLive:false,dataI:null,fib:null,ict:null,prevDayClose:0,tickPrice:0,lastFetchMs:0};
 
-// ═══ NUCLEAR PRICE FIX: single source of truth ═══
-function nowPrice(){return $.candles.length?$.candles[$.candles.length-1].c:(PREF[$.sym.s]||100)}
+// ═══ PRICE FIX v2: Use Yahoo meta.regularMarketPrice (real-time tick) ═══
+// $.tickPrice = live tick from Yahoo meta (updates every fetch)
+// $.candles[last].c = last completed candle close (can be up to 15min stale)
+// nowPrice() returns tickPrice if available, else last candle close
+function nowPrice(){return $.tickPrice||( $.candles.length?$.candles[$.candles.length-1].c:(PREF[$.sym.s]||100))}
 function P(v){if(v==null||isNaN(v))return'—';const b=nowPrice();return b<10?v.toFixed(4):b<200?v.toFixed(2):b<2000?v.toFixed(1):v.toFixed(0)}
 function Pc(v){const s=P(v);if(s==='—')return s;return Number(s).toLocaleString('en-US',{minimumFractionDigits:s.includes('.')?s.split('.')[1].length:0})}
 
@@ -199,7 +202,8 @@ async function fetchLive(){
   const yf=$.sym.yf;
   const tfm={'1':'1m','5':'5m','15':'15m','30':'30m','60':'60m','240':'60m','D':'1d','W':'1wk'};
   const rm={'1':'1d','5':'2d','15':'5d','30':'5d','60':'10d','240':'30d','D':'6mo','W':'1y'};
-  const url=`https://corsproxy.io/?url=${encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/'+yf+'?interval='+(tfm[$.tf]||'15m')+'&range='+(rm[$.tf]||'5d'))}`;
+  // includePrePost=true gives us the most recent data including pre/post market
+  const url=`https://corsproxy.io/?url=${encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/'+yf+'?interval='+(tfm[$.tf]||'15m')+'&range='+(rm[$.tf]||'5d')+'&includePrePost=true')}`;
   try{
     const res=await fetch(url,{signal:AbortSignal.timeout(8000)});
     if(!res.ok)throw new Error(res.status);
@@ -211,11 +215,18 @@ async function fetchLive(){
       cc.push({t:ts[i]*1000,o:q.open[i],h:q.high[i],l:q.low[i],c:q.close[i],v:q.volume?.[i]||0});
     }
     $.candles=cc.slice(-100);
+    // CRITICAL: Extract real-time tick price from meta
+    // meta.regularMarketPrice is the LIVE price (not candle close)
+    const meta=r.meta;
+    if(meta?.regularMarketPrice)$.tickPrice=meta.regularMarketPrice;
+    else if($.candles.length)$.tickPrice=$.candles[$.candles.length-1].c;
+    $.lastFetchMs=Date.now();
     // Prev day close for NDOG
     const td=new Date();td.setHours(0,0,0,0);
     for(let i=$.candles.length-1;i>=0;i--){if($.candles[i].t<td.getTime()){$.prevDayClose=$.candles[i].c;break}}
     $.dataLive=true;
-    const b=document.getElementById('data-badge');b.textContent='LIVE';b.style.background='rgba(0,212,170,.12)';b.style.color='var(--green)';
+    const b=document.getElementById('data-badge');
+    b.textContent='LIVE';b.style.background='rgba(0,212,170,.12)';b.style.color='var(--green)';
     return true;
   }catch(e){
     console.warn('Fetch:',e.message);
@@ -226,11 +237,24 @@ async function fetchLive(){
 }
 function startFeed(){
   if($.dataI)clearInterval($.dataI);
+  if($.tickI)clearInterval($.tickI);
   fetchLive().then(ok=>{
     if(ok)awM('s',`📡 <strong>Live:</strong> <span class="a">${$.sym.sh}</span> ${$.candles.length} candles. Price: <span class="g">${Pc(nowPrice())}</span>`);
     else awM('s',`⚠️ Offline for ${$.sym.sh}.`);
   });
-  $.dataI=setInterval(()=>fetchLive().then(()=>updPx()),30000);
+  // Full candle+tick refresh every 15s
+  $.dataI=setInterval(()=>fetchLive().then(()=>updPx()),15000);
+  // Tick-only price refresh every 8s (lightweight — just gets meta.regularMarketPrice)
+  $.tickI=setInterval(async()=>{
+    try{
+      const yf=$.sym.yf;
+      const url=`https://corsproxy.io/?url=${encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/'+yf+'?interval=1m&range=1d&includePrePost=true')}`;
+      const res=await fetch(url,{signal:AbortSignal.timeout(5000)});
+      if(!res.ok)return;
+      const j=await res.json(),meta=j.chart?.result?.[0]?.meta;
+      if(meta?.regularMarketPrice){$.tickPrice=meta.regularMarketPrice;$.lastFetchMs=Date.now();updPx()}
+    }catch(e){}
+  },8000);
 }
 
 // ═══ SWING DETECTION ═══
@@ -590,13 +614,13 @@ function ansQ(msg){
 
 // ═══ CHART+TOPBAR ═══
 function loadChart(){document.getElementById('chart-wrap').innerHTML=`<iframe src="https://www.tradingview.com/widgetembed/?frameElementId=tv&symbol=${encodeURIComponent($.sym.s)}&interval=${$.tf}&hidesidetoolbar=0&hidetoptoolbar=0&symboledit=1&saveimage=1&toolbarbg=1e222d&studies=MAExp%40tv-basicstudies%1FVWAP%40tv-basicstudies&theme=dark&style=1&timezone=exchange&locale=en" style="width:100%;height:100%;border:none" allowfullscreen></iframe>`}
-function updPx(){const el=document.getElementById('price-disp');const px=nowPrice();el.innerHTML=`<span style="color:${$.ict?.bias==='Bullish'?'var(--green)':$.ict?.bias==='Bearish'?'var(--red)':'var(--text1)'}">${Pc(px)}</span>`}
+function updPx(){const el=document.getElementById('price-disp');const px=nowPrice();const age=$.lastFetchMs?Math.round((Date.now()-$.lastFetchMs)/1000):99;const fresh=age<20;el.innerHTML=`<span style="color:${$.ict?.bias==='Bullish'?'var(--green)':$.ict?.bias==='Bearish'?'var(--red)':'var(--text1)'}">${Pc(px)}</span><span style="font-size:6px;color:${fresh?'var(--green)':'var(--yellow)'};margin-left:3px">${fresh?'●':age+'s'}</span>`}
 function rTF(){document.getElementById('tfbar').innerHTML=TFS.map(t=>`<button class="tf ${$.tf===t.v?'on':''}" onclick="chTF('${t.v}')">${t.l}</button>`).join('')}
 function rSess(){const s=getSess();document.getElementById('sessbdg').innerHTML=`${s.i} <span style="color:${s.c}">${s.n}</span>${s.kz?'<span class="kzt">KZ</span>':''}${s.sb?'<span class="kzt" style="background:rgba(108,92,231,.1);color:var(--accent)">SB</span>':''}`}
 function rSymL(){const q=document.getElementById('ssinp').value.toLowerCase();document.getElementById('slist').innerHTML=SYMS.filter(s=>s.n.toLowerCase().includes(q)||s.sh.toLowerCase().includes(q)).map(s=>`<div class="si hover-row ${s.s===$.sym.s?'act':''}" onclick="selSym('${s.s}')"><span>${s.n}</span><span style="font-size:8px;color:var(--accent);font-family:'DM Mono',monospace">${s.sh}</span></div>`).join('')}
 function toggleSym(){const d=document.getElementById('sdrop');d.classList.toggle('open');if(d.classList.contains('open')){rSymL();document.getElementById('ssinp').focus()}}
 function filterSym(){rSymL()}
-function selSym(sym){$.sym=SYMS.find(s=>s.s===sym);$.analysis=null;$.candles=[];$.ict=null;$.fib=null;document.getElementById('symlbl').textContent=$.sym.sh;document.getElementById('sdrop').classList.remove('open');document.getElementById('aw-sym').textContent=$.sym.sh;loadChart();rP();startWatch()}
+function selSym(sym){$.sym=SYMS.find(s=>s.s===sym);$.analysis=null;$.candles=[];$.ict=null;$.fib=null;$.tickPrice=0;if($.tickI)clearInterval($.tickI);document.getElementById('symlbl').textContent=$.sym.sh;document.getElementById('sdrop').classList.remove('open');document.getElementById('aw-sym').textContent=$.sym.sh;loadChart();rP();startWatch()}
 function chTF(tf){$.tf=tf;$.candles=[];$.ict=null;rTF();loadChart();rP();startFeed();awM('s','🔄 TF → <span class="a">'+TFS.find(t=>t.v===tf)?.l+'</span>')}
 function toggleAuto(){$.auto=!$.auto;const b=document.getElementById('autob'),l=document.getElementById('autolbl');if($.auto){b.classList.add('on');l.textContent='AUTO ON';doAnalyze();$.autoI=setInterval(doAnalyze,45000)}else{b.classList.remove('on');l.textContent='AUTO';if($.autoI)clearInterval($.autoI)}}
 
@@ -756,7 +780,8 @@ function rKB(b){
 function updSt(){
   const est=new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const s=getSess();
-  document.getElementById('stl').innerHTML='SMC Terminal • '+($.dataLive?'<span style="color:var(--green)">📡 LIVE</span>':'<span style="color:var(--red)">⚠ OFFLINE</span>')+' • '+$.sym.sh+'/'+TFS.find(t=>t.v===$.tf)?.l+' • '+$.candles.length+' candles • Price: '+Pc(nowPrice());
+  const age=$.lastFetchMs?Math.round((Date.now()-$.lastFetchMs)/1000):99;
+  document.getElementById('stl').innerHTML='SMC v5 • '+($.dataLive?'<span style="color:var(--green)">📡 LIVE</span>':'<span style="color:var(--red)">⚠ OFFLINE</span>')+' • '+$.sym.sh+'/'+TFS.find(t=>t.v===$.tf)?.l+' • '+$.candles.length+'c • <span style="color:var(--text1)">'+Pc(nowPrice())+'</span> <span style="color:'+(age<20?'var(--green)':'var(--yellow)')+'">('+(age<20?'live':age+'s ago')+')</span>';
   document.getElementById('str').innerHTML=s.i+' '+s.n+' • '+est+' EST';
   rSess();updPx();
 }
