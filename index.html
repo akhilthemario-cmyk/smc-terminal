@@ -172,35 +172,21 @@ const SYMS=[
 const TFS=[{v:"1",l:"1m"},{v:"5",l:"5m"},{v:"15",l:"15m"},{v:"30",l:"30m"},{v:"60",l:"1H"},{v:"240",l:"4H"},{v:"D",l:"1D"},{v:"W",l:"1W"}];
 const PREF={'OANDA:XAUUSD':3320,'OANDA:EURUSD':1.085,'OANDA:GBPUSD':1.265,'FX:USDJPY':149.5,'OANDA:GBPJPY':189,'BITSTAMP:BTCUSD':107000,'BITSTAMP:ETHUSD':2600,'NASDAQ:AAPL':225,'NASDAQ:TSLA':340,'SP:SPX':5700,'OANDA:NAS100USD':20500,'TVC:DXY':104,'OANDA:USOIL':62,'OANDA:XAGUSD':33};
 
-let $={sym:SYMS[0],tf:"15",analysis:null,busy:false,auto:false,autoI:null,notifs:[],tab:"analysis",msgs:[],typing:false,wI:null,wCyc:0,candles:[],dataLive:false,dataI:null,fib:null,ict:null,prevDayClose:0,tickPrice:0,lastFetchMs:0,tvPrice:0,tvLastMs:0};
+let $={sym:SYMS[0],tf:"15",analysis:null,busy:false,auto:false,autoI:null,notifs:[],tab:"analysis",msgs:[],typing:false,wI:null,wCyc:0,candles:[],dataLive:false,dataI:null,fib:null,ict:null,prevDayClose:0,tickPrice:null,lastFetchMs:0,pxSrc:'init'};
 
-// ═══ PRICE FIX v3: Multi-source with TradingView as priority ═══
-// Priority: tvPrice (from TradingView widget) → tickPrice (from Yahoo meta) → last 1m candle close → reference
+// ═══ PRICE FIX v4: Bulletproof with debug ═══
+// tickPrice = null means "no data yet" (not 0!)
+// Source tracking: $.pxSrc tells us WHERE the price came from
 function nowPrice(){
-  // If TradingView sent us a price in the last 30s, use it (most accurate)
-  if($.tvPrice>0&&(Date.now()-$.tvLastMs)<30000)return $.tvPrice;
-  // Otherwise use Yahoo tick/candle
-  return $.tickPrice||($.candles.length?$.candles[$.candles.length-1].c:0)||(PREF[$.sym.s]||100);
+  // 1. Yahoo tick price (from meta.regularMarketPrice) — most accurate
+  if($.tickPrice!==null&&$.tickPrice>0){$.pxSrc='tick';return $.tickPrice}
+  // 2. Last candle close
+  if($.candles.length>0){$.pxSrc='candle';return $.candles[$.candles.length-1].c}
+  // 3. Reference fallback (only before first fetch)
+  $.pxSrc='ref';return PREF[$.sym.s]||100;
 }
 function P(v){if(v==null||isNaN(v))return'—';const b=nowPrice()||100;return b<10?v.toFixed(4):b<200?v.toFixed(2):b<2000?v.toFixed(1):v.toFixed(0)}
 function Pc(v){const s=P(v);if(s==='—')return s;return Number(s).toLocaleString('en-US',{minimumFractionDigits:s.includes('.')?s.split('.')[1].length:0})}
-
-// ═══ TRADINGVIEW PRICE LISTENER ═══
-// TradingView widget sends postMessage events with price data
-// We listen for these to get real-time tick prices
-window.addEventListener('message',function(ev){
-  try{
-    if(!ev.data)return;
-    let d=typeof ev.data==='string'?JSON.parse(ev.data):ev.data;
-    // TradingView sends various message types — look for price-related ones
-    if(d.name==='quoteUpdate'&&d.data){
-      const q=d.data;
-      if(q.lp||q.last_price){$.tvPrice=q.lp||q.last_price;$.tvLastMs=Date.now();updPx()}
-    }
-    // Also try the widgetbar format
-    if(d.type==='symbolUpdate'&&d.lp){$.tvPrice=d.lp;$.tvLastMs=Date.now();updPx()}
-  }catch(e){}
-});
 
 // ═══ SESSION ═══
 function getSess(){
@@ -217,15 +203,12 @@ function getSess(){
   return{n:"Off Hours",p:"Wait",i:"⏸",c:"var(--text3)",kz:false,sb:false};
 }
 
-// ═══ LIVE DATA v3: 1m candles for price accuracy + analysis TF for patterns ═══
-// Key insight: ALWAYS fetch 1m candles for price — they're at most 60s stale
-// Then fetch the selected TF candles for ICT pattern analysis
+// ═══ LIVE DATA v4: Debug-traced, bulletproof price extraction ═══
 const PROXIES=['https://corsproxy.io/?url=','https://api.allorigins.win/raw?url='];
 let proxyIdx=0;
-function getProxy(){return PROXIES[proxyIdx%PROXIES.length]}
 
 async function fetchYahoo(yf,interval,range){
-  const bust='&_t='+Date.now(); // cache buster
+  const bust='&_t='+Date.now();
   for(let attempt=0;attempt<PROXIES.length;attempt++){
     const proxy=PROXIES[(proxyIdx+attempt)%PROXIES.length];
     const raw='https://query1.finance.yahoo.com/v8/finance/chart/'+yf+'?interval='+interval+'&range='+range+'&includePrePost=true'+bust;
@@ -236,7 +219,7 @@ async function fetchYahoo(yf,interval,range){
       const j=await res.json();
       const r=j.chart?.result?.[0];
       if(!r?.timestamp)continue;
-      proxyIdx=(proxyIdx+attempt)%PROXIES.length; // remember working proxy
+      proxyIdx=(proxyIdx+attempt)%PROXIES.length;
       return r;
     }catch(e){continue}
   }
@@ -245,32 +228,25 @@ async function fetchYahoo(yf,interval,range){
 
 async function fetchLive(){
   const yf=$.sym.yf;
+  console.log('[SMC] fetchLive for',yf);
 
-  // STEP 1: Fetch 1m candles (for accurate current price — max 60s stale)
+  // STEP 1: 1m candles for price accuracy
   const r1m=await fetchYahoo(yf,'1m','2d');
   if(r1m){
-    // Extract real-time tick from meta
-    const meta=r1m.meta;
-    if(meta?.regularMarketPrice){
-      $.tickPrice=meta.regularMarketPrice;
-      $.lastFetchMs=Date.now();
-    }
-    // Build 1m candle array for price reference
+    const metaPx=r1m.meta?.regularMarketPrice;
+    if(metaPx&&metaPx>0){$.tickPrice=metaPx;$.lastFetchMs=Date.now();console.log('[SMC] tick(meta):',metaPx)}
     const ts=r1m.timestamp,q=r1m.indicators.quote[0];
-    const oneMin=[];
-    for(let i=0;i<ts.length;i++){
-      if(q.open[i]==null||q.close[i]==null)continue;
-      oneMin.push({t:ts[i]*1000,o:q.open[i],h:q.high[i]||q.open[i],l:q.low[i]||q.open[i],c:q.close[i],v:q.volume?.[i]||0});
+    let last1m=null;
+    for(let i=ts.length-1;i>=0;i--){if(q.close[i]!=null){last1m=q.close[i];break}}
+    if(last1m!==null){
+      console.log('[SMC] last1m close:',last1m);
+      if($.tickPrice===null||Math.abs($.tickPrice-last1m)/last1m>0.02){$.tickPrice=last1m;$.lastFetchMs=Date.now();console.log('[SMC] tick OVERRIDDEN:',last1m)}
     }
-    // Use the very last 1m candle close as tick price if meta didn't work
-    if(!$.tickPrice&&oneMin.length)$.tickPrice=oneMin[oneMin.length-1].c;
-    $.lastFetchMs=Date.now();
-    // Prev day close
     const td=new Date();td.setHours(0,0,0,0);
-    for(let i=oneMin.length-1;i>=0;i--){if(oneMin[i].t<td.getTime()){$.prevDayClose=oneMin[i].c;break}}
+    for(let i=ts.length-1;i>=0;i--){if(ts[i]*1000<td.getTime()&&q.close[i]!=null){$.prevDayClose=q.close[i];break}}
   }
 
-  // STEP 2: Fetch analysis-TF candles for ICT pattern detection
+  // STEP 2: Analysis-TF candles
   const tfm={'1':'1m','5':'5m','15':'15m','30':'30m','60':'60m','240':'60m','D':'1d','W':'1wk'};
   const rm={'1':'1d','5':'2d','15':'5d','30':'5d','60':'10d','240':'30d','D':'6mo','W':'1y'};
   const rTF=await fetchYahoo(yf,tfm[$.tf]||'15m',rm[$.tf]||'5d');
@@ -281,71 +257,47 @@ async function fetchLive(){
       cc.push({t:ts[i]*1000,o:q.open[i],h:q.high[i]||q.open[i],l:q.low[i]||q.open[i],c:q.close[i],v:q.volume?.[i]||0});
     }
     $.candles=cc.slice(-100);
-    // Also update tick from this meta if we didn't get it from 1m
-    if(!$.tickPrice&&rTF.meta?.regularMarketPrice){
-      $.tickPrice=rTF.meta.regularMarketPrice;
-      $.lastFetchMs=Date.now();
-    }
+    console.log('[SMC] candles:',$.candles.length,'lastClose:',$.candles.length?$.candles[$.candles.length-1].c:'none');
+    if($.tickPrice===null&&rTF.meta?.regularMarketPrice>0){$.tickPrice=rTF.meta.regularMarketPrice;$.lastFetchMs=Date.now()}
   }
 
-  // STEP 3: If tickPrice still not set, use last candle
-  if(!$.tickPrice&&$.candles.length){
-    $.tickPrice=$.candles[$.candles.length-1].c;
-    $.lastFetchMs=Date.now();
-  }
+  if($.tickPrice===null&&$.candles.length){$.tickPrice=$.candles[$.candles.length-1].c;$.lastFetchMs=Date.now();console.log('[SMC] tick from TF candle:',$.tickPrice)}
 
-  const ok=($.candles.length>0||$.tickPrice>0);
+  const ok=($.candles.length>0||$.tickPrice!==null);
   $.dataLive=ok;
   const b=document.getElementById('data-badge');
-  if(ok){b.textContent=$.tvPrice?'TV LIVE':'YF LIVE';b.style.background='rgba(0,212,170,.12)';b.style.color='var(--green)'}
+  if(ok){b.textContent='LIVE';b.style.background='rgba(0,212,170,.12)';b.style.color='var(--green)'}
   else{b.textContent='OFFLINE';b.style.background='rgba(255,71,87,.1)';b.style.color='var(--red)'}
+  console.log('[SMC] FINAL tick=',$.tickPrice,'src=',$.pxSrc,'candles=',$.candles.length);
   return ok;
 }
 
-// Quick tick-only refresh (just grabs meta price from 1m endpoint)
 async function tickRefresh(){
   const yf=$.sym.yf;
-  const bust='&_t='+Date.now();
-  const proxy=getProxy();
   try{
-    const url=proxy+encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/'+yf+'?interval=1m&range=1d&includePrePost=true'+bust);
+    const proxy=PROXIES[proxyIdx%PROXIES.length];
+    const url=proxy+encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/'+yf+'?interval=1m&range=1d&includePrePost=true&_t='+Date.now());
     const res=await fetch(url,{signal:AbortSignal.timeout(5000),cache:'no-store'});
     if(!res.ok)return;
     const j=await res.json(),r=j.chart?.result?.[0];
     if(!r)return;
-    // Get meta price
-    if(r.meta?.regularMarketPrice){$.tickPrice=r.meta.regularMarketPrice;$.lastFetchMs=Date.now()}
-    // Also get last 1m candle close as backup
-    const ts=r.timestamp,q=r.indicators?.quote?.[0];
-    if(ts&&q){
-      for(let i=ts.length-1;i>=0;i--){
-        if(q.close[i]!=null){
-          const lastClose=q.close[i];
-          // Use whichever is more recent: meta price or last candle
-          if(!$.tickPrice||Math.abs(Date.now()-ts[i]*1000)<120000){
-            $.tickPrice=r.meta?.regularMarketPrice||lastClose;
-            $.lastFetchMs=Date.now();
-          }
-          break;
-        }
-      }
-    }
-    updPx();
+    const metaPx=r.meta?.regularMarketPrice;
+    let last1m=null;
+    if(r.timestamp&&r.indicators?.quote?.[0]){const q=r.indicators.quote[0];for(let i=r.timestamp.length-1;i>=0;i--){if(q.close[i]!=null){last1m=q.close[i];break}}}
+    const newPx=metaPx>0?metaPx:last1m;
+    if(newPx&&newPx>0){$.tickPrice=newPx;$.lastFetchMs=Date.now();updPx()}
   }catch(e){}
 }
 
 function startFeed(){
   if($.dataI)clearInterval($.dataI);
   if($.tickI)clearInterval($.tickI);
+  $.tickPrice=null;$.pxSrc='init';
   fetchLive().then(ok=>{
-    if(ok){
-      const src=$.tvPrice?'TradingView':'Yahoo Finance';
-      awM('s',`📡 <strong>Live (${src}):</strong> <span class="a">${$.sym.sh}</span> ${$.candles.length}c. Price: <span class="g">${Pc(nowPrice())}</span>`);
-    }else awM('s',`⚠️ Offline for ${$.sym.sh}.`);
+    if(ok)awM('s',`📡 <strong>Live:</strong> <span class="a">${$.sym.sh}</span> ${$.candles.length}c. Price: <span class="g">${Pc(nowPrice())}</span> <span style="font-size:7px;color:var(--text3)">[src:${$.pxSrc}]</span>`);
+    else awM('s',`⚠️ Offline for ${$.sym.sh}.`);
   });
-  // Full candle refresh every 20s
   $.dataI=setInterval(()=>fetchLive().then(()=>updPx()),20000);
-  // Quick tick refresh every 6s for near real-time price
   $.tickI=setInterval(tickRefresh,6000);
 }
 
@@ -713,17 +665,15 @@ function loadChart(){
 function updPx(){
   const el=document.getElementById('price-disp');const px=nowPrice();
   const age=$.lastFetchMs?Math.round((Date.now()-$.lastFetchMs)/1000):99;
-  const tvFresh=$.tvPrice>0&&(Date.now()-$.tvLastMs)<30000;
-  const src=tvFresh?'TV':'YF';
-  const fresh=tvFresh||age<15;
-  el.innerHTML=`<span style="color:${$.ict?.bias==='Bullish'?'var(--green)':$.ict?.bias==='Bearish'?'var(--red)':'var(--text1)'}">${Pc(px)}</span><span style="font-size:6px;color:${fresh?'var(--green)':'var(--yellow)'};margin-left:3px">${src} ${fresh?'●':age+'s'}</span>`;
+  const fresh=age<15;
+  el.innerHTML=`<span style="color:${$.ict?.bias==='Bullish'?'var(--green)':$.ict?.bias==='Bearish'?'var(--red)':'var(--text1)'}">${Pc(px)}</span><span style="font-size:6px;color:${fresh?'var(--green)':age<30?'var(--yellow)':'var(--red)'};margin-left:3px">${$.pxSrc==='ref'?'REF':fresh?'●':age+'s'}</span>`;
 }
 function rTF(){document.getElementById('tfbar').innerHTML=TFS.map(t=>`<button class="tf ${$.tf===t.v?'on':''}" onclick="chTF('${t.v}')">${t.l}</button>`).join('')}
 function rSess(){const s=getSess();document.getElementById('sessbdg').innerHTML=`${s.i} <span style="color:${s.c}">${s.n}</span>${s.kz?'<span class="kzt">KZ</span>':''}${s.sb?'<span class="kzt" style="background:rgba(108,92,231,.1);color:var(--accent)">SB</span>':''}`}
 function rSymL(){const q=document.getElementById('ssinp').value.toLowerCase();document.getElementById('slist').innerHTML=SYMS.filter(s=>s.n.toLowerCase().includes(q)||s.sh.toLowerCase().includes(q)).map(s=>`<div class="si hover-row ${s.s===$.sym.s?'act':''}" onclick="selSym('${s.s}')"><span>${s.n}</span><span style="font-size:8px;color:var(--accent);font-family:'DM Mono',monospace">${s.sh}</span></div>`).join('')}
 function toggleSym(){const d=document.getElementById('sdrop');d.classList.toggle('open');if(d.classList.contains('open')){rSymL();document.getElementById('ssinp').focus()}}
 function filterSym(){rSymL()}
-function selSym(sym){$.sym=SYMS.find(s=>s.s===sym);$.analysis=null;$.candles=[];$.ict=null;$.fib=null;$.tickPrice=0;$.tvPrice=0;$.tvLastMs=0;if($.tickI)clearInterval($.tickI);document.getElementById('symlbl').textContent=$.sym.sh;document.getElementById('sdrop').classList.remove('open');document.getElementById('aw-sym').textContent=$.sym.sh;loadChart();rP();startWatch()}
+function selSym(sym){$.sym=SYMS.find(s=>s.s===sym);$.analysis=null;$.candles=[];$.ict=null;$.fib=null;$.tickPrice=null;if($.tickI)clearInterval($.tickI);document.getElementById('symlbl').textContent=$.sym.sh;document.getElementById('sdrop').classList.remove('open');document.getElementById('aw-sym').textContent=$.sym.sh;loadChart();rP();startWatch()}
 function chTF(tf){$.tf=tf;$.candles=[];$.ict=null;rTF();loadChart();rP();startFeed();awM('s','🔄 TF → <span class="a">'+TFS.find(t=>t.v===tf)?.l+'</span>')}
 function toggleAuto(){$.auto=!$.auto;const b=document.getElementById('autob'),l=document.getElementById('autolbl');if($.auto){b.classList.add('on');l.textContent='AUTO ON';doAnalyze();$.autoI=setInterval(doAnalyze,45000)}else{b.classList.remove('on');l.textContent='AUTO';if($.autoI)clearInterval($.autoI)}}
 
@@ -884,9 +834,8 @@ function updSt(){
   const est=new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York',hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const s=getSess();
   const age=$.lastFetchMs?Math.round((Date.now()-$.lastFetchMs)/1000):99;
-  const tvFresh=$.tvPrice>0&&(Date.now()-$.tvLastMs)<30000;
-  const src=tvFresh?'TV':'YF';const fresh=tvFresh||age<15;
-  document.getElementById('stl').innerHTML='SMC v6 • '+($.dataLive?'<span style="color:var(--green)">📡 '+src+'</span>':'<span style="color:var(--red)">⚠ OFFLINE</span>')+' • '+$.sym.sh+'/'+TFS.find(t=>t.v===$.tf)?.l+' • '+$.candles.length+'c • <span style="color:var(--text1)">'+Pc(nowPrice())+'</span> <span style="color:'+(fresh?'var(--green)':'var(--yellow)')+'">('+(fresh?'live':age+'s')+')</span>';
+  const fresh=age<15;
+  document.getElementById('stl').innerHTML='SMC v7 • '+($.dataLive?'<span style="color:var(--green)">📡 LIVE</span>':'<span style="color:var(--red)">⚠ OFFLINE</span>')+' • '+$.sym.sh+'/'+TFS.find(t=>t.v===$.tf)?.l+' • '+$.candles.length+'c • <span style="color:var(--text1)">'+Pc(nowPrice())+'</span> ['+$.pxSrc+'] <span style="color:'+(fresh?'var(--green)':'var(--yellow)')+'">('+(fresh?'live':age+'s')+')</span>';
   document.getElementById('str').innerHTML=s.i+' '+s.n+' • '+est+' EST';
   rSess();updPx();
 }
