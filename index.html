@@ -320,7 +320,9 @@ function ictAnalyze(){
   const c=$.candles;
   if(c.length<20)return null;
   // CRITICAL: price read directly from last candle RIGHT NOW
-  const px=c[c.length-1].c;
+  // CRITICAL: use nowPrice() (live tick) for ALL price comparisons,
+  // NOT the last candle close which can be minutes stale
+  const px=nowPrice();
   const sw=findSw(c,3);
   const A={px,fvgs:[],obs:[],brk:[],mit:[],bos:null,choch:null,sweeps:[],eqHL:[],bias:'Neutral',str:'',disp:null,pd:null,ote:null,ndog:null,mmbm:null,mmsm:null,sess:getSess(),dets:[],conf:35,trade:null};
 
@@ -835,7 +837,7 @@ function updSt(){
   const s=getSess();
   const age=$.lastFetchMs?Math.round((Date.now()-$.lastFetchMs)/1000):99;
   const fresh=age<15;
-  document.getElementById('stl').innerHTML='SMC v7 • '+($.dataLive?'<span style="color:var(--green)">📡 LIVE</span>':'<span style="color:var(--red)">⚠ OFFLINE</span>')+' • '+$.sym.sh+'/'+TFS.find(t=>t.v===$.tf)?.l+' • '+$.candles.length+'c • <span style="color:var(--text1)">'+Pc(nowPrice())+'</span> ['+$.pxSrc+'] <span style="color:'+(fresh?'var(--green)':'var(--yellow)')+'">('+(fresh?'live':age+'s')+')</span>';
+  document.getElementById('stl').innerHTML='SMC v8 • '+($.dataLive?'<span style="color:var(--green)">📡 LIVE</span>':'<span style="color:var(--red)">⚠ OFFLINE</span>')+' • '+$.sym.sh+'/'+TFS.find(t=>t.v===$.tf)?.l+' • '+$.candles.length+'c • <span style="color:var(--text1)">'+Pc(nowPrice())+'</span> ['+$.pxSrc+'] <span style="color:'+(fresh?'var(--green)':'var(--yellow)')+'">('+(fresh?'live':age+'s')+')</span>';
   document.getElementById('str').innerHTML=s.i+' '+s.n+' • '+est+' EST';
   rSess();updPx();
 }
